@@ -1286,7 +1286,15 @@ function evStreak(m, ok) {
   if (st.bold >= BOLD_STREAK) {
     st.bold = 0;
     G.evBoldB = Math.min(BOLD_B_MAX, (G.evBoldB || 0) + 2);
-    G.ab.clu = Math.min(99, G.ab.clu + 2); G.pot.clu = Math.max(G.pot.clu, G.ab.clu);
+    const was = G.ab.clu;
+    G.ab.clu = Math.min(80, G.ab.clu + 2); G.pot.clu = Math.min(80, Math.max(G.pot.clu, G.ab.clu)); // 20–80 scouting scale
+    // Already maxed? The legend grows instead: Mr. Clutch ★ → ★★★ (extra edge in close games and the playoffs).
+    if (was >= 80 && (G.clutchStars || 0) < 3) {
+      G.clutchStars = (G.clutchStars || 0) + 1; const st = '★'.repeat(G.clutchStars);
+      addFeed('gold', B(`Mr. Clutch ${st}`, `Mr. Clutch ${st}`, `Mr. Clutch ${st}`),
+        B('Your Clutch is already maxed — now the legend grows. Extra edge in close games and the playoffs.', 'Tu Clutch ya está al máximo: ahora crece la leyenda. Ventaja extra en partidos cerrados y en playoffs.', 'Seu Clutch já está no máximo: agora a lenda cresce. Vantagem extra em jogos apertados e nos playoffs.'));
+      toast(`MR. CLUTCH ${st}`, 'gold');
+    }
     addFeed('gold', B('Big-Game DNA', 'ADN de Partidos Grandes', 'DNA de Jogo Grande'),
       B(`${BOLD_STREAK} big gambles paid off in a row. Clutch +2 and High Risk odds +2%.`,
         `${BOLD_STREAK} apuestas grandes seguidas salieron bien. Clutch +2 y éxito de Alto Riesgo +2%.`,
@@ -1594,15 +1602,23 @@ function playGame(quiet) {
   let p = 1 / (1 + Math.exp(-(us - g.r) / (pro ? 11 : 9)));
   const close = Math.abs(us - g.r) < 7;
   if (close && !out && G.role !== 'Bench') p += (G.ab.clu - 45) * (pro ? 0.002 : 0.004);
+  if ((close || g.kind !== 'reg') && !out && STARTS(G.role) && G.clutchStars) p += G.clutchStars * (pro ? 0.015 : 0.02); // Mr. Clutch
   p = clamp(p, 0.03, 0.97);
   const win = rand() < p, hi = ri(14, 45), lo = Math.max(0, hi - (close ? ri(1, 8) : ri(1, 24)));
   g.us = win ? hi : lo; g.them = win ? lo : hi; g.win = win; g.out = out;
   if (!out) {
     // m = playing time × rating-driven quality (≈0.9 for a typical starter, ≈1.1 for a star-level rating).
     const snaps = SNAPS[G.role], q = prodQ(), m = 0.9 * snaps * (1 + 0.4 * Math.max(-0.5, q)), gs = gameStats(m, snaps, q, { pts: g.us, close });
-    mergeStats(S.st, gs.d); g.line = gs.line;
+    // Close wins that came down to the final drive: QB gets a game-winning drive (often a 4th-quarter comeback), K a game-winning FG.
+    const margin = g.us - g.them;
+    if (win && margin <= 8 && STARTS(G.role)) {
+      if (G.subPos === 'QB' && chance(45)) { gs.d.gwd = 1; if (chance(65)) gs.d.qc4 = 1; g.clutch = true; }
+      if (G.subPos === 'K' && margin <= 3 && gs.d.fgm > 0 && chance(55)) { gs.d.gwfg = 1; g.clutch = true; }
+      if (gs.d.gwd || gs.d.gwfg) { G.fame += G.stage === 'PRO' ? 2 : 1; S.hl++; }
+    }
+    mergeStats(S.st, gs.d); g.line = gs.line + (gs.d.gwd ? ' · GWD' : gs.d.gwfg ? ' · GW FG' : '');
     if (gs.big && G.role !== 'Bench') { S.hl++; g.big = true; }
-    if (win && close && G.role !== 'Bench' && chance(40)) { g.clutch = true; S.hl++; }
+    if (win && close && G.role !== 'Bench' && !g.clutch && chance(40)) { g.clutch = true; S.hl++; }
   }
   if (win) S.w++; else S.l++;
   S.gi++;
@@ -1641,7 +1657,7 @@ const ALL_SLOTS = { QB: 1, RB: 1, WR: 3, TE: 1, OT: 2, OL: 3, DE: 2, DT: 2, DL: 
 function statIndex(st, n) {
   const s = (k) => (st[k] || 0) * 17 / Math.max(1, n), c1 = (x) => clamp(x, 0, 1.6);
   switch (G.subPos) {
-    case 'QB': return 0.5 * c1((s('pyd') + s('ryd')) / 4600) + 0.4 * c1((s('ptd') + s('rtd')) / 36) + 0.1 * clamp(1 - s('int') / 20, 0, 1); // total offense: dual threats count
+    case 'QB': return 0.5 * c1((s('pyd') + s('ryd')) / 4600) + 0.4 * c1((s('ptd') + s('rtd')) / 36) + 0.1 * clamp(1 - s('int') / 20, 0, 1) + 0.05 * c1(s('gwd') / 4); // total offense; comebacks help the MVP case
     case 'RB': return 0.6 * c1(s('ryd') / 1650) + 0.3 * c1(s('rtd') / 14) + 0.1 * c1(s('recyd') / 440);
     case 'WR': return 0.6 * c1(s('recyd') / 1290) + 0.4 * c1(s('rectd') / 10);
     case 'TE': return 0.6 * c1(s('recyd') / 665) + 0.4 * c1(s('rectd') / 5.6);
@@ -1650,7 +1666,7 @@ function statIndex(st, n) {
     case 'LB': return 0.6 * c1(s('tkl') / 122) + 0.4 * c1(s('sck') / 6.3);
     case 'DE': return 0.65 * c1(s('sck') / 13.4) + 0.35 * c1(s('tfl') / 16.5);
     case 'OL': case 'OT': return 0.45 * c1(s('pan') / (G.subPos === 'OT' ? 85 : 105)) + 0.35 * clamp(1 - (s('sa') - 1) / 7, 0, 1) + 0.2 * clamp(1 - s('pra') / 50, 0, 1);
-    case 'K': return 0.5 * c1(s('fgm') / 34) + 0.3 * (st.fga ? c1(st.fgm / st.fga / 0.9) : 0) + 0.2 * c1((st.lng || 0) / 56);
+    case 'K': return 0.05 * c1(s('gwfg') / 3) + 0.5 * c1(s('fgm') / 34) + 0.3 * (st.fga ? c1(st.fgm / st.fga / 0.9) : 0) + 0.2 * c1((st.lng || 0) / 56);
     default: return 0.5 * c1(s('sck') / 11.7) + 0.5 * c1(s('tfl') / 17);
   }
 }
@@ -1724,7 +1740,7 @@ function finishSeason() {
     if (V.conf.team === 1) { honor('allconf', `${G.year} All-${V.conf.name} 1st Team`, `${G.year} Primer Equipo ${V.conf.name}`, `${G.year} 1º Time ${V.conf.name}`); fa += 6; }
     else if (V.conf.team === 2) { honor('allconf2', `${G.year} All-${V.conf.name} 2nd Team`, `${G.year} Segundo Equipo ${V.conf.name}`, `${G.year} 2º Time ${V.conf.name}`); fa += 3; }
     if (V.aa.sel) { honor('allam', `${G.year} ${V.aa.fcs ? 'FCS ' : ''}All-American`, `${G.year} All-American${V.aa.fcs ? ' FCS' : ''}`); fa += V.aa.fcs ? 8 : 15; }
-    if (V.poy) { honor('helmet', `${G.year} Golden Helmet Trophy (Player of the Year)`, `${G.year} Trofeo Casco de Oro (Jugador del Año)`, `${G.year} Troféu Capacete de Ouro (Jogador do Ano)`); fa += 40; }
+    if (V.poy) { honor('helmet', `${G.year} Golden Helmet Trophy (College Player of the Year)`, `${G.year} Trofeo Casco de Oro (Jugador Universitario del Año)`, `${G.year} Troféu Capacete de Ouro (Jogador Universitário do Ano)`); fa += 40; }
     G.fame += fa;
     const rv = Math.round(revShare(col(), o, G.subPos, G.role, G.year) * (G.commit === G.colId ? 1.05 : 1));
     G.revAnnual = rv; payMoney('rev', rv, false);
@@ -2165,7 +2181,7 @@ function hallCardHTML(e, rank) {
 function hofCalc() {
   const proSeasons = G.hist.filter((h) => h.stage === 'PRO'), starts = proSeasons.reduce((s, h) => s + (STARTS(h.role) ? 1 : h.role === 'Situational' ? 0.5 : 0), 0);
   const colScore = hcount('allam') * 25 + hcount('helmet') * 45 + hcount('natcol') * 20 + hcount('allconf') * 6 + hcount('allconf2') * 3 + (G.colFame || 0) * 0.15;
-  const proScore = hcount('allpro') * 14 + hcount('allpro2') * 6 + hcount('allstar') * 5 + hcount('mvp') * 20 + hcount('league') * 6 + starts * 1.5 + Math.max(0, G.peakOvr - 64) * 3 + clamp(statUnits() * 3, 0, 30);
+  const proScore = hcount('allpro') * 14 + hcount('allpro2') * 6 + hcount('allstar') * 5 + hcount('mvp') * 20 + hcount('league') * 6 + starts * 1.5 + Math.max(0, G.peakOvr - 64) * 3 + clamp(statUnits() * 3, 0, 30) + clamp((G.pc.gwd || 0) * 0.5 + (G.pc.gwfg || 0) * 0.8, 0, 15); // clutch legacy
   return { col: colScore >= 60, pro: proSeasons.length >= 5 && proScore >= HOF_BAR, first: proScore >= HOF_FIRST, score: Math.round(proScore), colScore: Math.round(colScore), seasons: proSeasons.length };
 }
 function retire() {
@@ -2198,6 +2214,7 @@ async function loadAll() {
 }
 function resumeCareer(s) {
   G = s.G; RNG.s = G.rng | 0;
+  ATTR_KEYS.forEach((k) => { G.ab[k] = Math.min(80, G.ab[k]); G.pot[k] = Math.min(80, G.pot[k]); }); // repair saves hit by the old Big-Game DNA cap bug
   registerSchools(G.customSchools);
   if (G.exposure != null) { if (G.stage === 'HS') G.fame = G.exposure; delete G.exposure; } Object.assign(avatar, G.av || {});
   tab = 'play'; showScreen('game'); renderAll(); Ads.gameplayStart();
@@ -2425,7 +2442,7 @@ function viewEvent() {
     <div class="coach"><canvas data-coach="${ev.id}" width="48" height="48"></canvas><div class="bubble"><b>${tx(ev.t)}</b>${tx(ev.d)}</div></div>
     <div class="grid3 mt2">${ch.map(([m, cls, n]) => `<button class="btn ${cls}" data-act="choose" data-m="${m}">${n}<small>${evRate(m)}% ${L('success', 'éxito', 'sucesso')} · x${EV_MAG[m]}${m === 'safe' && G.evSt && G.evSt.safe ? ` · 🛡${G.evSt.safe}/${SAFE_STREAK}` : m === 'bold' && G.evSt && G.evSt.bold ? ` · 🔥${G.evSt.bold}/${BOLD_STREAK}` : ''}</small></button>`).join('')}</div>
     <p class="hint mt">${L('Bigger risk = bigger reward, but failure can cost attributes, Fame or raise injury risk.', 'Más riesgo = más premio, pero fallar puede costar atributos, exposición o subir el riesgo de lesión.', 'Mais risco = mais prêmio, mas falhar pode custar atributos, fama ou aumentar o risco de lesão.')}</p>
-    <details class="costinfo"><summary>ℹ ${L('How the odds work', 'Cómo funcionan las probabilidades', 'Como funcionam as chances')}</summary><p class="hint tight">${L(`Odds rise with Football IQ (all choices) and Clutch (risky ones). 🛡 ${SAFE_STREAK} Conservative successes in a row: longer career, safer odds, less Clutch. 🔥 ${BOLD_STREAK} High Risk successes in a row: more Clutch and better High Risk odds.`, `Las probabilidades suben con el IQ de Fútbol (todas) y el Clutch (las arriesgadas). 🛡 ${SAFE_STREAK} éxitos Conservadores seguidos: carrera más larga, más seguridad, menos Clutch. 🔥 ${BOLD_STREAK} éxitos de Alto Riesgo seguidos: más Clutch y mejor éxito de Alto Riesgo.`, `As chances sobem com o QI de Jogo (todas) e o Clutch (as arriscadas). 🛡 ${SAFE_STREAK} sucessos Conservadores seguidos: carreira mais longa, mais segurança, menos Clutch. 🔥 ${BOLD_STREAK} sucessos de Alto Risco seguidos: mais Clutch e melhor chance de Alto Risco.`)}</p></details>
+    <details class="costinfo"><summary>ℹ ${L('How the odds work', 'Cómo funcionan las probabilidades', 'Como funcionam as chances')}</summary><p class="hint tight">${L(`Odds rise with Football IQ (all choices) and Clutch (risky ones). 🛡 ${SAFE_STREAK} Conservative successes in a row: longer career, safer odds, less Clutch. 🔥 ${BOLD_STREAK} High Risk successes in a row: more Clutch and better High Risk odds (Clutch maxed → Mr. Clutch ★).`, `Las probabilidades suben con el IQ de Fútbol (todas) y el Clutch (las arriesgadas). 🛡 ${SAFE_STREAK} éxitos Conservadores seguidos: carrera más larga, más seguridad, menos Clutch. 🔥 ${BOLD_STREAK} éxitos de Alto Riesgo seguidos: más Clutch y mejor éxito de Alto Riesgo (Clutch al máximo → Mr. Clutch ★).`, `As chances sobem com o QI de Jogo (todas) e o Clutch (as arriscadas). 🛡 ${SAFE_STREAK} sucessos Conservadores seguidos: carreira mais longa, mais segurança, menos Clutch. 🔥 ${BOLD_STREAK} sucessos de Alto Risco seguidos: mais Clutch e melhor chance de Alto Risco (Clutch no máximo → Mr. Clutch ★).`)}</p></details>
     ${last}</div></div>`;
 }
 function viewSeason() {
@@ -2847,7 +2864,7 @@ function agingPanel() {
 }
 function viewPlayer() {
   const o = ovr(), sk = skill(), stars = calcStars(o, sk, G.fame), th = G.stage === 'RET' ? null : roleThresholds();
-  return `${dossier()}
+  return `${G.clutchStars ? `<div class="card gold"><h4>Mr. Clutch ${'★'.repeat(G.clutchStars)}</h4><p>${L('A big-game legend: extra edge in close games and the playoffs.', 'Leyenda de los partidos grandes: ventaja extra en partidos cerrados y en playoffs.', 'Lenda dos jogos grandes: vantagem extra em jogos apertados e nos playoffs.')}</p></div>` : ''}${dossier()}
     ${th ? roleCard() : ''}
     ${agingPanel()}
     <div class="panel"><div class="ph"><span>${L('Training Cost Now', 'Costo de Entrenamiento', 'Custo de Treinamento')}</span><span>${L('Age', 'Edad', 'Idade')} ${G.age}</span></div><div class="pb">${costLegend()}</div></div>
@@ -2892,13 +2909,13 @@ function viewMoney() {
 }
 
 const STAT_COLS = {
-  QB: [['cmp', 'Cmp'], ['att', 'Att'], ['pct', 'Cmp%'], ['pyd', 'Yds'], ['ptd', 'TD'], ['int', 'Int'], ['ypa', 'Y/A'], ['car', 'Rush'], ['ryd', 'RuYds'], ['rtd', 'RuTD']],
+  QB: [['cmp', 'Cmp'], ['att', 'Att'], ['pct', 'Cmp%'], ['pyd', 'Yds'], ['ptd', 'TD'], ['int', 'Int'], ['ypa', 'Y/A'], ['car', 'Rush'], ['ryd', 'RuYds'], ['rtd', 'RuTD'], ['qc4', '4QC'], ['gwd', 'GWD']],
   RB: [['car', 'Att'], ['ryd', 'Yds'], ['ypc', 'Y/A'], ['rtd', 'TD'], ['lng', 'Long'], ['x20', '20+'], ['brk', 'BrkTk'], ['rec', 'Rec'], ['recyd', 'RecYds']],
   WR: [['rec', 'Rec'], ['recyd', 'Yds'], ['ypr', 'Y/R'], ['rectd', 'TD']],
   CB: [['tkl', 'Tkl'], ['int', 'Int'], ['pd', 'PD'], ['tfl', 'TFL'], ['sck', 'Sk'], ['ff', 'FF']],
   LB: [['tkl', 'Tkl'], ['sck', 'Sk'], ['qbh', 'QBHit'], ['tfl', 'TFL'], ['ff', 'FF'], ['pd', 'PD'], ['int', 'Int']],
   OL: [['pan', 'Pancakes'], ['sa', 'SkAlw'], ['pra', 'PrAlw']],
-  K: [['fgm', 'FGM'], ['fga', 'FGA'], ['fgp', 'FG%'], ['lng', 'Lng'], ['fg50', '50+'], ['xp', 'XPM'], ['xpa', 'XPA']]
+  K: [['fgm', 'FGM'], ['fga', 'FGA'], ['fgp', 'FG%'], ['lng', 'Lng'], ['fg50', '50+'], ['xp', 'XPM'], ['xpa', 'XPA'], ['gwfg', 'GW FG']]
 };
 STAT_COLS.TE = STAT_COLS.WR; STAT_COLS.S = STAT_COLS.CB; STAT_COLS.DE = STAT_COLS.DL = STAT_COLS.DT = STAT_COLS.LB; STAT_COLS.OT = STAT_COLS.OL;
 const STAT_HELP = {
@@ -2911,11 +2928,12 @@ const STAT_HELP = {
   Rush: B('QB rushing attempts', 'acarreos del QB', 'corridas do QB'), RuYds: B('QB rushing yards', 'yardas por tierra del QB', 'jardas terrestres do QB'), RuTD: B('QB rushing touchdowns', 'touchdowns por tierra del QB', 'touchdowns terrestres do QB'),
   '50+': B('field goals from 50+ yards (made/attempted)', 'goles de campo de 50+ yardas (anotados/intentados)', 'field goals de 50+ jardas (convertidos/tentados)'), XPA: B('extra points attempted', 'puntos extra intentados', 'pontos extras tentados'),
   Long: B('longest run', 'carrera más larga', 'corrida mais longa'), '20+': B('runs of 20+ yards', 'carreras de 20+ yardas', 'corridas de 20+ jardas'),
+  '4QC': B('4th-quarter comebacks', 'remontadas en el 4.º cuarto', 'viradas no 4º quarto'), GWD: B('game-winning drives', 'series ganadoras', 'campanhas da vitória'), 'GW FG': B('game-winning field goals', 'goles de campo ganadores', 'field goals da vitória'),
   'FG%': B('field goal %', '% de goles de campo', '% de field goals'), Lng: B('longest field goal', 'gol de campo más largo', 'field goal mais longo'), XPM: B('extra points made (the 1-point kick after a touchdown)', 'puntos extra anotados (la patada de 1 punto tras un touchdown)', 'pontos extras convertidos (o chute de 1 ponto após um touchdown)')
 };
 const AWARD_CODE = { natprep: 'NatCh', state: 'StCh', allstate: 'AllSt', natcol: 'NatCh', allconf: 'AllConf', allconf2: 'AllConf2', allam: 'AA', helmet: 'POY', league: 'Champ', confpro: 'ConfCh', confcol: 'ConfCh', allstar: 'AS', allpro: 'AL-1', allpro2: 'AL-2', mvp: 'MVP' };
 const AWARD_HELP = [['StCh', B('state champion', 'campeón estatal', 'campeão estadual')], ['ConfCh', B('conference champion', 'campeón de conferencia', 'campeão de conferência')], ['NatCh', B('national champion', 'campeón nacional', 'campeão nacional')], ['AllSt', B('All-State', 'Selección Estatal', 'Seleção Estadual')], ['AllConf', B('All-Conference 1st team', 'Primer equipo de conferencia', '1º time da conferência')], ['AllConf2', B('All-Conference 2nd team', 'Segundo equipo de conferencia', '2º time da conferência')],
-  ['AA', B('All-American', 'All-American', 'All-American')], ['POY', B('Golden Helmet (Player of the Year)', 'Casco de Oro (Jugador del Año)', 'Capacete de Ouro (Jogador do Ano)')], ['AS', B('All-Star (88 per year)', 'All-Star (88 por año)', 'All-Star (88 por ano)')],
+  ['AA', B('All-American', 'All-American', 'All-American')], ['POY', B('Golden Helmet (College Player of the Year)', 'Casco de Oro (Jugador Universitario del Año)', 'Capacete de Ouro (Jogador Universitário do Ano)')], ['AS', B('All-Star (88 per year)', 'All-Star (88 por año)', 'All-Star (88 por ano)')],
   ['AL-1', B('All-League 1st team', 'Primer equipo de la Liga', '1º time da Liga')], ['AL-2', B('All-League 2nd team', 'Segundo equipo de la Liga', '2º time da Liga')], ['MVP', B('league MVP', 'MVP de la liga', 'MVP da liga')], ['Champ', B('league champion', 'campeón de liga', 'campeão da liga')]];
 function statCell(st, k) {
   const s = (x) => st[x] || 0, f1 = (a, b) => (b ? (a / b).toFixed(1) : '0.0');
@@ -2959,7 +2977,7 @@ function pixSVG(k, px) {
 function pixDraw(c, k, x0, y0, sc) { pixGrid(k).forEach((row, y) => row.forEach((ch, x) => { if (ch !== '.') { c.fillStyle = PIX_PAL[ch]; c.fillRect(x0 + x * sc, y0 + y * sc, sc, sc); } })); }
 const HONOR_ORDER = [
   ['league', B('League Champion', 'Campeón de Liga', 'Campeão da Liga'), '💍'], ['mvp', B('League MVP', 'MVP de la Liga', 'MVP da Liga'), '👑'], ['allpro', B('All-League 1st Team', 'Primer Equipo de la Liga', '1º Time da Liga'), '🥇'],
-  ['allpro2', B('All-League 2nd Team', 'Segundo Equipo de la Liga', '2º Time da Liga'), '🥈'], ['confpro', B('Conference Champion', 'Campeón de Conferencia', 'Campeão de Conferência'), '🏆'], ['allstar', B('All-Star', 'All-Star', 'All-Star'), '⭐'], ['helmet', B('Golden Helmet (Player of the Year)', 'Casco de Oro (Jugador del Año)', 'Capacete de Ouro (Jogador do Ano)'), '🏈'],
+  ['allpro2', B('All-League 2nd Team', 'Segundo Equipo de la Liga', '2º Time da Liga'), '🥈'], ['confpro', B('Conference Champion', 'Campeón de Conferencia', 'Campeão de Conferência'), '🏆'], ['allstar', B('All-Star', 'All-Star', 'All-Star'), '⭐'], ['helmet', B('Golden Helmet (College Player of the Year)', 'Casco de Oro (Jugador Universitario del Año)', 'Capacete de Ouro (Jogador Universitário do Ano)'), '🏈'],
   ['natcol', B('College National Champion', 'Campeón Nacional Universitario', 'Campeão Nacional Universitário'), '🏆'], ['confcol', B('College Conference Champion', 'Campeón de Conferencia Universitario', 'Campeão de Conferência Universitário'), '🏆'], ['allam', B('All-American', 'All-American', 'All-American'), '🎖'], ['allconf', B('All-Conference 1st Team', 'Primer Equipo de Conferencia', '1º Time da Conferência'), '🏅'],
   ['allconf2', B('All-Conference 2nd Team', 'Segundo Equipo de Conferencia', '2º Time da Conferência'), '🏅'], ['natprep', B('National Prep Champion', 'Campeón Nacional Prep', 'Campeão Nacional Prep'), '🏆'], ['state', B('State Champion', 'Campeón Estatal', 'Campeão Estadual'), '🏆'],
   ['allstate', B('All-State', 'Selección Estatal', 'Seleção Estadual'), '🏅']
@@ -3023,7 +3041,7 @@ function careerPNG() {
   c.font = `28px ${f2}`; c.fillStyle = '#a7b1d4';
   c.fillText(`${L('Peak', 'Pico', 'Auge')} OVR ${G.peakOvr} · ${L('Peak stars', 'Estrellas', 'Estrelas')} ${G.peakStars}★ · ${L('Fame', 'Fama', 'Fama')} ${G.fame}`, 228, 140);
   c.fillText(`${L('Earnings', 'Ganancias', 'Ganhos')} ${money(grossEarn())} · ${G.proId ? proT(G.proId).name : G.colId ? col().name : hs().name}`, 228, 172);
-  c.fillStyle = '#3ddc84'; c.fillText(`${G.hof && G.hof.pro ? L('HALL OF LEGENDS · CLASS OF ', 'SALÓN DE LEYENDAS · CLASE ', 'HALL DAS LENDAS · TURMA ') + (G.retiredYear + 5) : L('Career complete', 'Carrera completa', 'Carreira completa')}${G.hof && G.hof.col ? L(' · College HOF', ' · HOF Universitario', ' · HOF Universitário') : ''}`, 228, 204);
+  c.fillStyle = '#3ddc84'; c.fillText(`${G.hof && G.hof.pro ? L('HALL OF LEGENDS · CLASS OF ', 'SALÓN DE LEYENDAS · CLASE ', 'HALL DAS LENDAS · TURMA ') + (G.retiredYear + 5) : L('Career complete', 'Carrera completa', 'Carreira completa')}${G.hof && G.hof.col ? L(' · College HOF', ' · HOF Universitario', ' · HOF Universitário') : ''}${G.clutchStars ? ' · Mr. Clutch ' + '★'.repeat(G.clutchStars) : ''}`, 228, 204);
   // trophy summary
   c.fillStyle = '#ffd23f'; c.font = `11px ${f1}`; c.fillText(L('TROPHY CASE', 'VITRINA', 'ESTANTE'), 40, honTop - 12);
   if (!stacks.length) { c.fillStyle = '#a7b1d4'; c.font = `26px ${f2}`; c.fillText(L('No trophies — but what a ride.', 'Sin trofeos — pero qué viaje.', 'Sem troféus — mas que jornada.'), 40, honTop + 24); }
