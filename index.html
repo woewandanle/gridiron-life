@@ -2124,7 +2124,7 @@ function renderCreator() {
       ${natOK ? '' : `<div class="natlist"><b>${L(`No national powerhouse in ${CR.region}. They are in:`, `No hay potencia nacional en ${CR.region}. Están en:`, `Não há potência nacional em ${CR.region}. Elas estão em:`)}</b>${natStates().map(([st, ns]) => `<button class="pill" data-act="pickState" data-v="${st}">${st}</button><span>${ns}</span>`).join('')}</div>`}`;
   const seedBody = `<label class="lbl" for="in-seed">${L('Career seed — same seed = same starting ratings', 'Semilla — misma semilla = mismos atributos iniciales', 'Semente — mesma semente = mesmos atributos iniciais')}</label>
       <div style="display:flex;gap:6px;align-items:center"><input id="in-seed" class="inp" maxlength="18" value="${esc(CR.seed)}" ${CR.seedOk ? '' : 'readonly'} style="text-align:center"><button class="btn" data-act="rerollSeed" aria-label="${L('New random seed', 'Nueva semilla', 'Nova semente')}">🎲</button></div>
-      <p class="hint" style="margin-bottom:0">${CR.seedOk ? L('Unlocked: paste or type any seed (a friend\'s, or one from a Legend Card).', 'Desbloqueado: pega o escribe cualquier semilla (la de un amigo o de una Tarjeta de Leyenda).', 'Desbloqueado: cole ou digite qualquer semente (de um amigo ou de um Card de Lenda).') : L('Locked — use the 🎬 seed button under Kickoff to paste your own.', 'Bloqueada — usa el botón 🎬 de semilla bajo Iniciar para pegar la tuya.', 'Bloqueada — use o botão 🎬 de semente abaixo de Começar para colar a sua.')}</p>`;
+      <p class="hint" style="margin-bottom:0">${CR.seedOk ? L('Unlocked: paste or type any seed (a friend\'s, or one from a Legend Card).', 'Desbloqueado: pega o escribe cualquier semilla (la de un amigo o de una Tarjeta de Leyenda).', 'Desbloqueado: cole ou digite qualquer semente (de um amigo ou de um Card de Lenda).') : L('Locked — use the 🎬 seed button below to paste your own.', 'Bloqueada — usa el botón 🎬 de semilla de abajo para pegar la tuya.', 'Bloqueada — use o botão 🎬 de semente abaixo para colar a sua.')}</p>`;
   $('scr-create').innerHTML = `<div style="padding:12px 12px 30px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <button class="btn" data-act="toTitle">◀ ${L('Back', 'Atrás', 'Voltar')}</button>
@@ -2140,11 +2140,11 @@ function renderCreator() {
     </div></div>
     <button class="btn gb big full" data-act="kickoff">🏈 ${L('Kickoff · 9th Grade', 'Iniciar · 9.º Grado', 'Começar · 9º Ano')}</button>
     ${CR.wonder ? '' : `<button class="btn ob full mt" data-act="adWonder">🎬 ${L('Watch ad: WONDERKID', 'Ver anuncio: PRODIGIO', 'Ver anúncio: PRODÍGIO')}<small>${L('all potentials +5 — this career', 'todos los potenciales +5 — esta carrera', 'todos os potenciais +5 — nesta carreira')}</small></button>`}
-    ${CR.seedOk ? '' : `<button class="btn ob full mt" data-act="adSeed">🎬 ${L('Watch ad: use your own seed', 'Ver anuncio: usar tu propia semilla', 'Ver anúncio: usar sua própria semente')}<small>${L('paste a friend\'s seed — this career', 'pega la semilla de un amigo — esta carrera', 'cole a semente de um amigo — nesta carreira')}</small></button>`}
     <p class="lbl" style="margin:16px 0 6px">${L('Optional', 'Opcional', 'Opcional')}</p>
     ${crFold('face', '🎨', L('Customize face', 'Personalizar rostro', 'Personalizar rosto'), L('Jersey, hair, eyes…', 'Jersey, pelo, ojos…', 'Camisa, cabelo, olhos…'), faceBody)}
     ${crFold('home', '🏫', L('Home & high school', 'Hogar y preparatoria', 'Cidade e escola'), `${CR.region} · ${schoolLbl}`, homeBody)}
     ${crFold('seed', '🌱', L('Seed', 'Semilla', 'Semente'), esc(CR.seed), seedBody)}
+    ${CR.seedOk ? '' : `<button class="btn ob full mt" data-act="adSeed">🎬 ${L('Watch ad: use your own seed', 'Ver anuncio: usar tu propia semilla', 'Ver anúncio: usar sua própria semente')}<small>${L('paste a friend\'s seed — this career', 'pega la semilla de un amigo — esta carrera', 'cole a semente de um amigo — nesta carreira')}</small></button>`}
   </div>`;
   const drawFace = () => ['face-cv', 'face-cv2'].forEach((id) => { if ($(id)) drawAvatar($(id), Object.assign({}, avatar, { num: CR.num })); });
   drawFace();
