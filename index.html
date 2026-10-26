@@ -470,9 +470,10 @@ const POS_GROUPS = {
   QB: { n: B('QB · Quarterback', 'QB · Mariscal', 'QB · Quarterback'), subs: ['QB'], sk1: B('Pass Accuracy', 'Precisión de Pase', 'Precisão'), sk2: B('Arm Strength', 'Fuerza de Brazo', 'Braço'), s1: 'ACC', s2: 'ARM',
     d1: B('Drives completion % (CMP%)', 'Define el % de pases completos', 'Define a % de passes completos'), d2: B('Drives yards per attempt (YPA)', 'Define las yardas por intento (YPA)', 'Define as jardas por tentativa (YPA)'),
     w: { spd: .08, brs: .07, pow: .05, agi: .1, iq: .18, sk1: .24, sk2: .2, clu: .08 } },
-  RB: { n: B('RB · Running Back', 'RB · Corredor', 'RB · Running Back'), subs: ['RB'], sk1: B('Positioning', 'Posicionamiento', 'Colocação'), sk2: B('Break Tackling', 'Romper Tacleadas', 'Quebra-Tackle'), s1: 'POS', s2: 'BTK',
+  RB: { n: B('RB · Running Back', 'RB · Corredor', 'RB · Running Back'), subs: ['RB'], sk1: B('Vision', 'Visión', 'Visão'), sk2: B('Break Tackling', 'Romper Tacleadas', 'Quebra-Tackle'), s1: 'VIS', s2: 'BTK',
     d1: B('Hole vision & cutback lanes', 'Visión de huecos y cortes', 'Visão de brechas e cortes'), d2: B('Yards after contact', 'Yardas tras contacto', 'Jardas após contato'),
-    w: { spd: .18, brs: .16, pow: .1, agi: .14, iq: .06, sk1: .16, sk2: .14, clu: .06 } },
+    // Vision and Break Tackling are the RB's core; speed/burst make the big plays, agility the cuts, power the goal line.
+    w: { spd: .15, brs: .15, pow: .08, agi: .12, iq: .06, sk1: .20, sk2: .18, clu: .06 } },
   SP: { n: B('Skill · WR / CB / S', 'Habilidad · WR / CB / S', 'Habilidade · WR / CB / S'), subs: ['WR', 'CB', 'S'], sk1: B('Hands', 'Manos', 'Mãos'), sk2: B('Positioning', 'Posicionamiento', 'Colocação'), s1: 'HND', s2: 'POS',
     d1: B('Catches & interceptions', 'Recepciones e intercepciones', 'Recepções e interceptações'), d2: B('Route separation & coverage', 'Separación y cobertura', 'Separação e cobertura'),
     w: { spd: .2, brs: .15, pow: .05, agi: .16, iq: .08, sk1: .15, sk2: .15, clu: .06 } },
@@ -906,7 +907,7 @@ const isSkill = (k) => k === 'sk1' || k === 'sk2';
 const GRID_LBL = {
   brs: B('Burst', 'Arranque', 'Explosão'), iq: B('IQ', 'IQ', 'QI'),
   QB: [B('Accuracy', 'Precisión', 'Precisão'), B('Arm', 'Brazo', 'Braço')],
-  RB: [B('Position', 'Posición', 'Colocação'), B('Break Tkl', 'Rompe Tkl', 'Quebra Tkl')],
+  RB: [B('Vision', 'Visión', 'Visão'), B('Break Tkl', 'Rompe Tkl', 'Quebra Tkl')],
   SP: [null, B('Position', 'Posición', 'Colocação')],
   BS: [null, B('Tkl/Break', 'Tacl/Romp', 'Tkl/Q-Tkl')],
   K: [B('Accuracy', 'Precisión', 'Precisão'), B('Leg', 'Pierna', 'Perna')],
@@ -1443,10 +1444,37 @@ function gameStats(m, snaps, q, ctx) {
       line: `${cmp}/${att} · ${pyd} YDS · ${ptd} TD · ${int} INT${car ? ` · ${car} RUSH ${ryd} YDS${rtd ? ` ${rtd} TD` : ''}` : ''}` };
   }
   if (sp === 'RB') {
-    const car = Math.max(1, R(ri(12, 24) * m)), ypc = clamp(3.2 + (a.sk1 - 30) * 0.02 + (a.sk2 - 30) * 0.02 + (a.spd - 30) * 0.012 + rf(-1.6, 1.8), 0.5, 11);
-    const ryd = R(car * ypc), rtd = Math.max(0, R(ryd / 110 + rf(-0.5, 0.6))), brk = R(car * clamp(0.1 + (a.sk2 - 30) * 0.005, 0.04, 0.4) * rf(0.6, 1.3));
-    const rec = R(ri(0, 4) * m), recyd = R(rec * rf(5, 11));
-    return { d: { car, ryd, rtd, brk, rec, recyd }, big: ryd >= 170 || rtd >= 3, line: `${car} CAR · ${ryd} YDS · ${rtd} TD · ${brk} BRK` };
+    // Every carry is simulated: Vision (+burst) finds the hole → yards before contact; Power drives through contact;
+    // Break Tackling (+agility) makes the first tackler miss; Speed (+burst) turns a clean break into a long run.
+    // Rushing TDs come two ways: goal-line carries (Power + Break Tkl, opportunities from the team's scoring) and
+    // breakaways that go the distance (Speed). NFL norms: a starter ~250 carries, ~4.3 Y/A, ~1,000 yds, 6-9 TD,
+    // 40-50 forced missed tackles; an elite back 5.0+ Y/A, 1,400+ yds, 12-18 TD, 70-90 missed tackles, a 60+ yd long run.
+    // ratings above 70 still help, at 40% rate — keeps a maxed-out back near (not miles past) the 2,105-yd record
+    const soft = (x) => (x <= 70 ? x : 70 + (x - 70) * 0.4), ra = STAGE_ADJ();
+    const vis = soft(a.sk1 + ra), bt = soft(a.sk2 + ra), spd = soft(a.spd + ra), brs = soft(a.brs + ra), agi = soft(a.agi + ra), pow = soft(a.pow + ra);
+    // workload: playing time first, rating second (a great back gets ~300-330 carries, not 380)
+    const car = Math.max(1, R(ri(11, 21) * 0.9 * snaps * (1 + (G.stage === 'PRO' ? 0.2 : 0.4) * Math.max(-0.5, q)) * (G.stage === 'PRO' ? 1 : 1.12))); // college/HS stars carry a bigger load
+    let ryd = 0, brk = 0, lng = 0, rtd = 0, x20 = 0;
+    const teamTD = Math.max(0, R(ctx.pts / 7 + rf(-0.3, 0.3)));
+    for (let i = 0; i < car; i++) {
+      let y = (G.stage === 'COL' ? 1.4 : 1.5) + (vis - 60) * 0.035 + (brs - 60) * 0.012 + rf(-2.6, 2.6);                         // yards before contact
+      if (y > -1.5) {
+        y += Math.max(0, 1.2 + (pow - 60) * 0.02 + rf(-0.8, 1.2));                                     // through contact
+        const broke = chance(clamp(10 + (bt - 60) * 0.6 + (agi - 60) * 0.2, 3, 40));
+        if (broke) { brk++; y += rf(1.5, 5); }
+        if ((broke || y >= 4) && chance(clamp(5 + (spd - 60) * 0.3 + (brs - 60) * 0.12, 1, 11))) {     // breakaway
+          y += rf(12, 46);
+          if (rtd < teamTD && chance(clamp(26 + (spd - 60) * 1.1, 8, 60))) rtd++;
+        }
+      }
+      y = Math.round(y); ryd += y; if (y > lng) lng = y; if (y >= 20) x20++;
+    }
+    // goal-line chances: the starter gets a share of the team's touchdown drives that end near the goal line
+    const glc = snaps < 0.5 ? (chance(20) ? 1 : 0) : Math.max(0, R(teamTD * 0.28 * snaps * (1 + 0.3 * q) + rf(-0.4, 0.4)));
+    for (let i = 0; i < glc && rtd < teamTD; i++) if (chance(clamp(38 + (pow - 60) * 1.1 + (bt - 60) * 0.3, 15, 80))) rtd++;
+    // receiving out of the backfield (agility + IQ for routes); NFL starter ~35-45 catches, ~8 yds each
+    const rec = Math.max(0, R(snaps * rf(1, 4) * clamp(0.75 + (agi + a.iq + ra - 120) * 0.008, 0.5, 1.5))), recyd = R(rec * clamp(7 + (spd - 60) * 0.05 + rf(-3, 4), 2, 20));
+    return { d: { car, ryd, rtd, brk, rec, recyd, lng, x20 }, big: ryd >= 150 || rtd >= 2 || lng >= 50, line: `${car} CAR · ${ryd} YDS · ${rtd} TD · ${brk} BRK${lng >= 20 ? ` · LONG ${lng}` : ''}` };
   }
   if (sp === 'WR' || sp === 'TE') {
     const wr = sp === 'WR';
@@ -1508,7 +1536,7 @@ function mergeStats(dst, d) { Object.keys(d).forEach((k) => { if (k === 'lng') d
 function seasonLine(st) {
   const s = (k) => st[k] || 0, sp = G.subPos;
   if (sp === 'QB') return `${s('cmp')}/${s('att')} (${s('att') ? (s('cmp') / s('att') * 100).toFixed(1) : 0}%) · ${s('pyd').toLocaleString()} YDS · ${s('ptd')} TD · ${s('int')} INT · ${s('att') ? (s('pyd') / s('att')).toFixed(1) : 0} YPA · ${s('car')} RUSH ${s('ryd').toLocaleString()} YDS ${s('rtd')} TD`;
-  if (sp === 'RB') return `${s('car')} CAR · ${s('ryd').toLocaleString()} YDS (${s('car') ? (s('ryd') / s('car')).toFixed(1) : 0} YPC) · ${s('rtd')} TD · ${s('brk')} BRK TKL · ${s('rec')} REC`;
+  if (sp === 'RB') return `${s('car')} CAR · ${s('ryd').toLocaleString()} YDS (${s('car') ? (s('ryd') / s('car')).toFixed(1) : 0} YPC) · ${s('rtd')} TD · LONG ${s('lng')} · ${s('brk')} BRK TKL · ${s('rec')} REC`;
   if (sp === 'WR' || sp === 'TE') return `${s('rec')} REC · ${s('recyd').toLocaleString()} YDS · ${s('rectd')} TD`;
   if (sp === 'CB' || sp === 'S') return `${s('tkl')} TKL · ${s('int')} INT · ${s('pd')} PD · ${s('tfl')} TFL${s('sck') ? ` · ${s('sck')} SACKS` : ''} · ${s('ff')} FF`;
   if (sp === 'OL' || sp === 'OT') return `${s('pan')} PANCAKES · ${s('sa')} SACKS ALLOWED · ${s('pra')} PRESSURES ALLOWED`;
@@ -1633,7 +1661,7 @@ const seasonPerf = (S, o) => o + clamp((statIndex(S.st, S.games.length) - 0.85) 
 // That makes every position equally hard: All-Star ≈ top 12.5% of starters (88 of ~700), All-League 1st ≈ the top 1–3.
 const STARTERS = { QB: 1, RB: 1, WR: 3, TE: 1, OT: 2, OL: 3, DE: 2, DT: 2, DL: 2, LB: 3, CB: 2, S: 2, K: 1 };
 const PRO_MEAN = 65.2; // league-wide starter level after position normalization
-const POS_BASE = { QB: 64.7, RB: 60.8, WR: 60.6, TE: 60.3, CB: 57.0, S: 60.35, LB: 59.75, DE: 60.15, DL: 59.25, DT: 61.4, OL: 63.2, OT: 62.2, K: 64.0 };
+const POS_BASE = { QB: 64.7, RB: 58.9, WR: 60.6, TE: 60.3, CB: 57.0, S: 60.35, LB: 59.75, DE: 60.15, DL: 59.25, DT: 61.4, OL: 63.2, OT: 62.2, K: 64.0 };
 function Phi(z) { const t = 1 / (1 + 0.2316419 * Math.abs(z)), d = 0.3989423 * Math.exp(-z * z / 2), q = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274)))); return z > 0 ? 1 - q : q; }
 function rankOf(score, mean, teams) { const n = (STARTERS[G.subPos] || 1) * teams; return Math.max(1, 1 + Math.floor((1 - Phi((score - mean) / 3.2)) * n + rf(-0.5, 0.5))); }
 function awardsVoting(S, o) {
@@ -2066,7 +2094,7 @@ function faWait() {
 function statUnits() {
   const s = (k) => G.pc[k] || 0, sp = G.subPos;
   if (sp === 'QB') return (s('pyd') + s('ryd')) / 6000 + (s('ptd') + s('rtd')) / 43;
-  if (sp === 'RB') return s('ryd') / 1600 + s('rtd') / 15;
+  if (sp === 'RB') return s('ryd') / 1180 + s('rtd') / 10.7; // realistic ~1,100 yds / 8 TD a season → same career weight as before
   if (sp === 'WR' || sp === 'TE') return s('recyd') / 1600 + s('rectd') / 15;
   if (sp === 'CB' || sp === 'S') return s('int') / 6 + s('pd') / 30;
   if (sp === 'LB') return s('tkl') / 180 + s('sck') / 8; // off-ball LBs get ~2-3 sacks a year
@@ -2239,7 +2267,7 @@ function renderCreator() {
       <button class="btn" data-act="toTitle">◀ ${L('Back', 'Atrás', 'Voltar')}</button>
       <div class="lang"><button class="pill ${lang === 'en' ? 'on' : ''}" data-act="lang" data-v="en">EN</button><button class="pill ${lang === 'es' ? 'on' : ''}" data-act="lang" data-v="es">ES</button><button class="pill ${lang === 'pt' ? 'on' : ''}" data-act="lang" data-v="pt">PT</button></div>
     </div>
-    <div class="panel"><div class="ph yh"><span>${L('Your Player', 'Tu Jugador', 'Seu Jogador')}</span>${CR.wonder ? `<span class="tag g">WONDERKID +5</span>` : ''}</div><div class="pb">
+    <div class="panel"><div class="ph yh"><span>${L('Your Player', 'Tu Jugador', 'Seu Jogador')}</span>${CR.wonder ? `<span class="tag g">${L('WONDERKID', 'PRODIGIO', 'PRODÍGIO')} +5</span>` : ''}</div><div class="pb">
       <div class="cr-top"><canvas id="face-cv" width="96" height="96"></canvas>
         <div class="cr-id"><label class="lbl" for="in-name">${L('Name', 'Nombre', 'Nome')} <span class="d">(${L('max', 'máx', 'máx')} ${NAME_MAX})</span></label>
           <div style="display:flex;gap:5px"><input id="in-name" class="inp" maxlength="${NAME_MAX}" value="${esc(CR.name)}"><button class="chip" data-act="randName" aria-label="${L('Random name', 'Nombre al azar', 'Nome aleatório')}">🎲</button></div>
@@ -2865,7 +2893,7 @@ function viewMoney() {
 
 const STAT_COLS = {
   QB: [['cmp', 'Cmp'], ['att', 'Att'], ['pct', 'Cmp%'], ['pyd', 'Yds'], ['ptd', 'TD'], ['int', 'Int'], ['ypa', 'Y/A'], ['car', 'Rush'], ['ryd', 'RuYds'], ['rtd', 'RuTD']],
-  RB: [['car', 'Att'], ['ryd', 'Yds'], ['ypc', 'Y/A'], ['rtd', 'TD'], ['brk', 'BrkTk'], ['rec', 'Rec'], ['recyd', 'RecYds']],
+  RB: [['car', 'Att'], ['ryd', 'Yds'], ['ypc', 'Y/A'], ['rtd', 'TD'], ['lng', 'Long'], ['x20', '20+'], ['brk', 'BrkTk'], ['rec', 'Rec'], ['recyd', 'RecYds']],
   WR: [['rec', 'Rec'], ['recyd', 'Yds'], ['ypr', 'Y/R'], ['rectd', 'TD']],
   CB: [['tkl', 'Tkl'], ['int', 'Int'], ['pd', 'PD'], ['tfl', 'TFL'], ['sck', 'Sk'], ['ff', 'FF']],
   LB: [['tkl', 'Tkl'], ['sck', 'Sk'], ['qbh', 'QBHit'], ['tfl', 'TFL'], ['ff', 'FF'], ['pd', 'PD'], ['int', 'Int']],
@@ -2882,6 +2910,7 @@ const STAT_HELP = {
   SkAlw: B('sacks allowed (lower is better)', 'capturas permitidas (menos es mejor)', 'sacks permitidos (menos é melhor)'), FGM: B('field goals made', 'goles de campo anotados', 'field goals convertidos'), FGA: B('field goals attempted', 'goles de campo intentados', 'field goals tentados'),
   Rush: B('QB rushing attempts', 'acarreos del QB', 'corridas do QB'), RuYds: B('QB rushing yards', 'yardas por tierra del QB', 'jardas terrestres do QB'), RuTD: B('QB rushing touchdowns', 'touchdowns por tierra del QB', 'touchdowns terrestres do QB'),
   '50+': B('field goals from 50+ yards (made/attempted)', 'goles de campo de 50+ yardas (anotados/intentados)', 'field goals de 50+ jardas (convertidos/tentados)'), XPA: B('extra points attempted', 'puntos extra intentados', 'pontos extras tentados'),
+  Long: B('longest run', 'carrera más larga', 'corrida mais longa'), '20+': B('runs of 20+ yards', 'carreras de 20+ yardas', 'corridas de 20+ jardas'),
   'FG%': B('field goal %', '% de goles de campo', '% de field goals'), Lng: B('longest field goal', 'gol de campo más largo', 'field goal mais longo'), XPM: B('extra points made (the 1-point kick after a touchdown)', 'puntos extra anotados (la patada de 1 punto tras un touchdown)', 'pontos extras convertidos (o chute de 1 ponto após um touchdown)')
 };
 const AWARD_CODE = { natprep: 'NatCh', state: 'StCh', allstate: 'AllSt', natcol: 'NatCh', allconf: 'AllConf', allconf2: 'AllConf2', allam: 'AA', helmet: 'POY', league: 'Champ', confpro: 'ConfCh', confcol: 'ConfCh', allstar: 'AS', allpro: 'AL-1', allpro2: 'AL-2', mvp: 'MVP' };
