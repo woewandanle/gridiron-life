@@ -648,7 +648,7 @@ const capFor = (y) => Math.round(CAP0 * Math.pow(1.07, y - 2026));
 const infl = (y) => capFor(y) / CAP0;
 const MIN_TABLE = [885, 1005, 1075, 1145, 1215, 1215, 1215, 1300];
 const minSal = (cred, y) => Math.round(MIN_TABLE[Math.min(7, Math.max(0, cred))] * Math.pow(1.045, y - 2026));
-const POS_TOP = { QB: 60000, RB: 20500, WR: 40000, TE: 20000, OT: 30000, OL: 25000, DE: 45000, DL: 30000, DT: 33000, LB: 22000, CB: 30000, S: 21000, K: 6500 };
+const POS_TOP = { QB: 60000, RB: 20500, WR: 40000, TE: 20000, OT: 30000, OL: 25000, DE: 48000, DL: 30000, DT: 35000, LB: 22000, CB: 30000, S: 24000, K: 6500 };
 const REV_MULT = { QB: 1.6, RB: .8, WR: 1, TE: .75, OT: 1, OL: .85, DE: 1.1, DL: .9, DT: .9, LB: .8, CB: .95, S: .75, K: .25 };
 const DRAFT_ADJ = { QB: 2, DE: 1.5, OT: 1, WR: .5, CB: .5, DT: .5, DL: 0, LB: 0, OL: 0, TE: -.5, S: -.5, RB: -1, K: -5 };
 const COL_POOL = { Blue_Blood: 16000, Power_4: 13500, Group_5: 3000, FCS: 0 };
@@ -883,7 +883,24 @@ const CHIP_NAMES = {
 };
 const CR = { name: 'Marcus Williams', num: 7, pg: 'QB', sub: 'QB', region: 'TX', school: 'random', seed: '', hsName: 'Westbrook High', seedOk: false, wonder: false };
 
-const PG = () => POS_GROUPS[G.posGroup];
+// Linemen: offense and defense mirror each other — run play: Block ↔ Shed; pass play: Protection ↔ Rush.
+const LINE_SIDE = { OL: 'LO', OT: 'LO', DL: 'LD', DT: 'LD' };
+const LINE_LBL = {
+  LO: { sk1: B('Block', 'Bloqueo', 'Bloqueio'), sk2: B('Protection', 'Protección', 'Proteção'), s1: 'BLK', s2: 'PRO',
+    d1: B('Run blocking & pancakes', 'Bloqueo de carrera y pancakes', 'Bloqueio de corrida e pancakes'), d2: B('Pass protection: sacks & pressures allowed', 'Protección de pase: sacks y presiones permitidas', 'Proteção do passe: sacks e pressões permitidas') },
+  LD: { sk1: B('Shed', 'Zafarse', 'Desvencilhar'), sk2: B('Rush', 'Presión', 'Pressão'), s1: 'SHD', s2: 'RSH',
+    d1: B('Shed blocks, stop the run', 'Zafarse de bloqueos y frenar la carrera', 'Livrar-se de bloqueios e parar a corrida'), d2: B('Pass rush: sacks & QB hits', 'Presión al pasador: sacks y golpes al QB', 'Pressão no passe: sacks e golpes no QB') }
+};
+// OT = footwork vs speed rushers (Protection, agility); OL (guard/center) = power inside (Block, strength, IQ for the center's calls);
+// DT = anchor vs double teams (Shed, power); DL = more of a rusher (Rush, burst).
+const SUB_W = {
+  OT: { spd: .05, brs: .08, pow: .14, agi: .14, iq: .10, sk1: .19, sk2: .25, clu: .05 },
+  OL: { spd: .04, brs: .08, pow: .22, agi: .08, iq: .13, sk1: .26, sk2: .16, clu: .03 },
+  DT: { spd: .04, brs: .12, pow: .24, agi: .06, iq: .09, sk1: .26, sk2: .16, clu: .03 },
+  DL: { spd: .06, brs: .15, pow: .17, agi: .09, iq: .08, sk1: .20, sk2: .22, clu: .03 }
+};
+function pgOf(pg, sub) { const g = POS_GROUPS[pg]; if (pg !== 'LM') return g; return Object.assign({}, g, LINE_LBL[LINE_SIDE[sub] || 'LO'], { w: SUB_W[sub] || g.w }); }
+const PG = () => pgOf(G.posGroup, G.subPos);
 const isSkill = (k) => k === 'sk1' || k === 'sk2';
 // Short labels for the 2-column training grid only (fits a 360px phone); full names are used everywhere else.
 const GRID_LBL = {
@@ -892,20 +909,21 @@ const GRID_LBL = {
   RB: [B('Position', 'Posición', 'Colocação'), B('Break Tkl', 'Rompe Tkl', 'Quebra Tkl')],
   SP: [null, B('Position', 'Posición', 'Colocação')],
   BS: [null, B('Tkl/Break', 'Tacl/Romp', 'Tkl/Q-Tkl')],
-  K: [B('Accuracy', 'Precisión', 'Precisão'), B('Leg', 'Pierna', 'Perna')]
+  K: [B('Accuracy', 'Precisión', 'Precisão'), B('Leg', 'Pierna', 'Perna')],
+  LO: [B('Block', 'Bloqueo', 'Bloqueio'), B('Protect', 'Protección', 'Proteção')], LD: [B('Shed', 'Zafarse', 'Desvenc.'), B('Rush', 'Presión', 'Pressão')]
 };
 function gridLabel(k) {
-  if (k === 'sk1' || k === 'sk2') { const g = GRID_LBL[G.posGroup], o = g && g[k === 'sk1' ? 0 : 1]; return o ? tx(o) : attrLabel(k); }
+  if (k === 'sk1' || k === 'sk2') { const g = GRID_LBL[LINE_SIDE[G.subPos] || G.posGroup], o = g && g[k === 'sk1' ? 0 : 1]; return o ? tx(o) : attrLabel(k); }
   return GRID_LBL[k] ? tx(GRID_LBL[k]) : attrLabel(k);
 }
-function attrLabel(k, pg) { const g = POS_GROUPS[pg || G.posGroup]; return k === 'sk1' ? tx(g.sk1) : k === 'sk2' ? tx(g.sk2) : tx(BASE_LBL[k]); }
+function attrLabel(k, pg) { const g = pg ? pgOf(pg, G && G.posGroup === pg ? G.subPos : CR.sub) : PG(); return k === 'sk1' ? tx(g.sk1) : k === 'sk2' ? tx(g.sk2) : tx(BASE_LBL[k]); }
 function shortLbl(k) { return k === 'sk1' ? PG().s1 : k === 'sk2' ? PG().s2 : SHORT[k]; }
 // Kickers' OVR comes from only four ratings (accuracy, leg, clutch, IQ), so every training point lands on it; other
 // positions spread ~30% of OVR over athletic traits. K_CURVE keeps the kicker scale comparable to everyone else's
 // (same effort to become a starter or a star).
 const K_CURVE = 0.86;
-function calcOvr(ab, pg) { const w = POS_GROUPS[pg].w; let s = 0; ATTR_KEYS.forEach((k) => { s += ab[k] * w[k]; }); if (pg === 'K') s = 20 + (s - 20) * K_CURVE; return clamp(Math.round(s), 20, 80); }
-const ovr = () => calcOvr(G.ab, G.posGroup);
+function calcOvr(ab, pg, sub) { const w = pgOf(pg, sub || (G && G.posGroup === pg ? G.subPos : CR.sub)).w; let s = 0; ATTR_KEYS.forEach((k) => { s += ab[k] * w[k]; }); if (pg === 'K') s = 20 + (s - 20) * K_CURVE; return clamp(Math.round(s), 20, 80); }
+const ovr = () => calcOvr(G.ab, G.posGroup, G.subPos);
 const skill = () => clamp(Math.round((G.ab.sk1 + G.ab.sk2) / 2), 20, 80);
 // Training cost per +1 level (baseball-reference curve):
 //   step: 1 pt below 64, 2 pts at 64-71, 3 pts at 72+  ·  ×3 once you are at/above your potential (white line)
@@ -1100,7 +1118,7 @@ function startCareer() {
   const ab = { spd: ri(23, 29), brs: ri(23, 29), pow: ri(22, 28), agi: ri(23, 29), iq: ri(23, 29), sk1: ri(25, 31), sk2: ri(25, 31), clu: ri(23, 29) };
   // OOTP-style ceilings: one elite tool, one plus tool, the rest taper off. Position-relevant tools are likelier to draw the high tiers.
   const TIERS = [[72, 80], [66, 76], [62, 72], [58, 68], [54, 66], [50, 64], [46, 62], [46, 60]];
-  const wts = POS_GROUPS[CR.pg].w, bag = ATTR_KEYS.slice(), order = [];
+  const wts = pgOf(CR.pg, CR.sub).w, bag = ATTR_KEYS.slice(), order = [];
   while (bag.length) {
     const tot = bag.reduce((s, k) => s + wts[k] + 0.05, 0); let r = rand() * tot, i = 0;
     for (; i < bag.length - 1; i++) { r -= wts[bag[i]] + 0.05; if (r <= 0) break; }
@@ -1450,21 +1468,30 @@ function gameStats(m, snaps, q, ctx) {
     return { d: { tkl, int, pd, sck, ff, tfl }, big: (int >= 1 && pd >= 3) || tkl >= 12 || (int + ff >= 2), line: `${tkl} TKL · ${int} INT · ${pd} PD${sck ? ` · ${sck} SCK` : ''}${ff ? ` · ${ff} FF` : ''}` };
   }
   if (sp === 'LB' || sp === 'DE' || sp === 'DL' || sp === 'DT') {
-    const base = sp === 'LB' ? [4, 11] : [2, 6];
-    const tkl = R(ri(base[0], base[1]) * m), sck = sackRoll(sp, a, m), // TFL = sacks + run/screen stops behind the line. Calibrated to the NFL (PFR, since 1999): a starting edge/LB
+    const dl = sp === 'DL' || sp === 'DT', base = sp === 'LB' ? [4, 11] : dl ? [1, 5] : [2, 6];
+    // Interior/defensive linemen make tackles by shedding blocks (Shed); NFL starting DT ~35-55 tackles a year.
+    const tkl = R(ri(base[0], base[1]) * m * (dl ? clamp(0.75 + (a.sk1 + STAGE_ADJ() - 50) * 0.012, 0.6, 1.4) : 1)), sck = sackRoll(sp, a, m), // TFL = sacks + run/screen stops behind the line. Calibrated to the NFL (PFR, since 1999): a starting edge/LB
     // posts ~8-14 a year, elite pass rushers ~18-23, the league leader ~22-28 (record 39). HS/college offenses
     // give up more negative plays, so the non-sack part is scaled up there.
     nsb = { DE: 19, LB: 24, DL: 12, DT: 12 }[sp], stg = G.stage === 'HS' ? 1.6 : G.stage === 'COL' ? 1.25 : 1,
-    nsp = m * stg * (nsb + (a.brs - 30) * 0.25 + (a.sk2 - 30) * 0.15), ns = chance(nsp) ? (chance(12) ? 2 : 1) : 0,
+    nsp = m * stg * (nsb + (a.brs - 30) * 0.25 + ((dl ? a.sk1 : a.sk2) - 30) * 0.15), ns = chance(nsp) ? (chance(12) ? 2 : 1) : 0,
     tfl = ns + Math.floor(sck), ff = ffRoll(sp, a, sck, tkl);
     // Coverage plays: LBs (Hands) pick off ~0.5-1 a year and break up ~3-6; linemen bat down a couple, rare INT.
     const lb = sp === 'LB', int = chance(lb ? m * (2 + (a.sk1 - 30) * 0.06) : m * 0.4) ? 1 : 0,
       pd = (chance(lb ? m * (15 + (a.sk1 - 30) * 0.2) : m * (6 + (a.pow - 30) * 0.06)) ? 1 : 0) + int;
-    return { d: { tkl, sck, tfl, ff, int, pd }, big: sck >= 2 || tkl >= 13 || (sck >= 1 && ff) || int > 0, line: `${tkl} TKL · ${sck} SCK · ${tfl} TFL${ff ? ` · ${ff} FF` : ''}${int ? ` · ${int} INT` : ''}` };
+    // QB hits (official stat): sacks plus knockdowns. Starting edge ~13-20 a year, interior DL ~7-10, LB ~4-6.
+    const qk = { DE: [28, 1.0], DL: [22, 0.9], DT: [16, 0.8], LB: [8, 0.5] }[sp], qbh = Math.ceil(sck) + (chance(clamp(m * (qk[0] + (rushRating(sp, a) - 50) * qk[1]), 1, 80)) ? 1 : 0);
+    return { d: { tkl, sck, tfl, ff, int, pd, qbh }, big: sck >= 2 || tkl >= 13 || (sck >= 1 && ff) || int > 0, line: `${tkl} TKL · ${sck} SCK · ${tfl} TFL${ff ? ` · ${ff} FF` : ''}${int ? ` · ${int} INT` : ''}` };
   }
   if (sp === 'OL' || sp === 'OT') {
-    const pan = R(ri(1, 5) * m * clamp(0.6 + (a.sk1 - 30) * 0.03, 0.4, 2.2)), sa = chance(m * clamp(35 - (a.sk1 - 30) * 1.0, 3, 40)) ? 1 : 0;
-    return { d: { pan, sa }, big: pan >= 7 && sa === 0, line: `${pan} PANCAKES · ${sa} SACKS ALLOWED` };
+    // Block → pancakes (guards/centers get more run-game reps); Protection → sacks/pressures allowed (tackles face the
+    // fastest rushers, so they give up more). Approx. NFL starters (PFF-style tracking): OT ~4-6 sacks / 30-40 pressures
+    // a year, elite ~2-3 / <20; guards & centers ~2-3 / 20-30. Both are lower-is-better.
+    const ot = sp === 'OT', ls = STAGE_ADJ(), pE = a.sk2 + ls;
+    const pan = R(ri(1, 5) * m * (ot ? 0.85 : 1.1) * clamp(0.6 + (a.sk1 - 30) * 0.03, 0.4, 2.2));
+    const sa = chance(snaps * clamp(ot ? 52 - (pE - 30) * 0.8 : 34 - (pE - 30) * 0.55, 3, 60)) ? 1 : 0;
+    const pra = Math.max(0, R(snaps * Math.max(0.3, ot ? 3.4 - (pE - 30) * 0.045 : 2.6 - (pE - 30) * 0.035) * rf(0.4, 1.6)));
+    return { d: { pan, sa, pra }, big: pan >= 7 && sa === 0, line: `${pan} PANCAKES · ${sa} SACKS ALW · ${pra} PRESSURES ALW` };
   }
   // K
   // Accuracy sets the make rate, Leg Power the range; in close games Clutch shifts it (pressure kicks).
@@ -1484,9 +1511,9 @@ function seasonLine(st) {
   if (sp === 'RB') return `${s('car')} CAR · ${s('ryd').toLocaleString()} YDS (${s('car') ? (s('ryd') / s('car')).toFixed(1) : 0} YPC) · ${s('rtd')} TD · ${s('brk')} BRK TKL · ${s('rec')} REC`;
   if (sp === 'WR' || sp === 'TE') return `${s('rec')} REC · ${s('recyd').toLocaleString()} YDS · ${s('rectd')} TD`;
   if (sp === 'CB' || sp === 'S') return `${s('tkl')} TKL · ${s('int')} INT · ${s('pd')} PD · ${s('tfl')} TFL${s('sck') ? ` · ${s('sck')} SACKS` : ''} · ${s('ff')} FF`;
-  if (sp === 'OL' || sp === 'OT') return `${s('pan')} PANCAKES · ${s('sa')} SACKS ALLOWED`;
+  if (sp === 'OL' || sp === 'OT') return `${s('pan')} PANCAKES · ${s('sa')} SACKS ALLOWED · ${s('pra')} PRESSURES ALLOWED`;
   if (sp === 'K') return `${s('fgm')}/${s('fga')} FG (${s('fga') ? (s('fgm') / s('fga') * 100).toFixed(1) : 0}%) · LONG ${s('lng')} · 50+ ${s('fg50m')}/${s('fg50a')} · ${s('xp')}/${s('xpa')} XP`;
-  return `${s('tkl')} TKL · ${s('sck')} SACKS · ${s('tfl')} TFL · ${s('ff')} FF · ${s('pd')} PD · ${s('int')} INT`;
+  return `${s('tkl')} TKL · ${s('sck')} SACKS · ${s('qbh')} QB HITS · ${s('tfl')} TFL · ${s('ff')} FF · ${s('pd')} PD · ${s('int')} INT`;
 }
 
 function pushNextPost() {
@@ -1594,7 +1621,7 @@ function statIndex(st, n) {
     case 'S': return 0.4 * c1(s('tkl') / 128) + 0.3 * c1(s('int') / 5.1) + 0.3 * c1(s('pd') / 12.8);
     case 'LB': return 0.6 * c1(s('tkl') / 122) + 0.4 * c1(s('sck') / 6.3);
     case 'DE': return 0.65 * c1(s('sck') / 13.4) + 0.35 * c1(s('tfl') / 16.5);
-    case 'OL': case 'OT': return 0.75 * c1(s('pan') / (G.subPos === 'OT' ? 95 : 85)) + 0.25 * clamp(1 - s('sa') / 4, 0, 1);
+    case 'OL': case 'OT': return 0.45 * c1(s('pan') / (G.subPos === 'OT' ? 85 : 105)) + 0.35 * clamp(1 - (s('sa') - 1) / 7, 0, 1) + 0.2 * clamp(1 - s('pra') / 50, 0, 1);
     case 'K': return 0.5 * c1(s('fgm') / 34) + 0.3 * (st.fga ? c1(st.fgm / st.fga / 0.9) : 0) + 0.2 * c1((st.lng || 0) / 56);
     default: return 0.5 * c1(s('sck') / 11.7) + 0.5 * c1(s('tfl') / 17);
   }
@@ -1606,7 +1633,7 @@ const seasonPerf = (S, o) => o + clamp((statIndex(S.st, S.games.length) - 0.85) 
 // That makes every position equally hard: All-Star ≈ top 12.5% of starters (88 of ~700), All-League 1st ≈ the top 1–3.
 const STARTERS = { QB: 1, RB: 1, WR: 3, TE: 1, OT: 2, OL: 3, DE: 2, DT: 2, DL: 2, LB: 3, CB: 2, S: 2, K: 1 };
 const PRO_MEAN = 65.2; // league-wide starter level after position normalization
-const POS_BASE = { QB: 64.7, RB: 60.8, WR: 60.6, TE: 60.3, CB: 57.0, S: 60.35, LB: 59.75, DE: 60.15, DL: 58.15, DT: 60.9, OL: 63.2, OT: 62.4, K: 64.0 };
+const POS_BASE = { QB: 64.7, RB: 60.8, WR: 60.6, TE: 60.3, CB: 57.0, S: 60.35, LB: 59.75, DE: 60.15, DL: 59.25, DT: 61.4, OL: 63.2, OT: 62.2, K: 64.0 };
 function Phi(z) { const t = 1 / (1 + 0.2316419 * Math.abs(z)), d = 0.3989423 * Math.exp(-z * z / 2), q = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274)))); return z > 0 ? 1 - q : q; }
 function rankOf(score, mean, teams) { const n = (STARTERS[G.subPos] || 1) * teams; return Math.max(1, 1 + Math.floor((1 - Phi((score - mean) / 3.2)) * n + rf(-0.5, 0.5))); }
 function awardsVoting(S, o) {
@@ -1893,7 +1920,10 @@ function doTrade(toId, requested) {
     B(`${from.name} traded you to ${to.name} (${outlook.en}) in exchange for ${ret.en}. Players under contract don't get a vote — your deal (${money(c.apy)}/yr, ${c.yearsLeft} yrs left) carries over.`,
       `${from.name} te cambió a ${to.name} (${outlook.es}) a cambio de ${ret.es}. Los jugadores con contrato no deciden — tu acuerdo (${money(c.apy)}/año, ${c.yearsLeft} años restantes) se mantiene.`, `${from.name} te trocou para ${to.name} (${outlook.pt}) em troca de ${ret.pt}. Jogadores com contrato não decidem — seu acordo (${money(c.apy)}/ano, ${c.yearsLeft} anos restantes) continua valendo.`), 'money');
 }
-function tagValue() { const base = Math.round(POS_TOP[G.subPos] * infl(G.year + 1) * 0.86); return G.tagCount > 0 ? Math.max(base, Math.round(G.lastTag * 1.2)) : base; }
+// 2026 franchise tag (non-exclusive) by tag group — all offensive linemen share one number, so it's a bargain for a
+// tackle and a windfall for a guard/center; DE is cheaper than DT. Grows with the cap.
+const TAG_2026 = { QB: 43895, RB: 14293, WR: 27298, TE: 15045, OT: 25773, OL: 25773, DE: 24434, DL: 27127, DT: 27127, LB: 26865, CB: 21161, S: 20149, K: 6649 };
+function tagValue() { const base = Math.round(TAG_2026[G.subPos] * infl(G.year + 1)); return G.tagCount > 0 ? Math.max(base, Math.round(G.lastTag * 1.2)) : base; }
 
 function signPro(teamId, type, years, apy, gtd, bonus, extra) {
   const total = Math.round(apy * years);
@@ -2040,7 +2070,7 @@ function statUnits() {
   if (sp === 'WR' || sp === 'TE') return s('recyd') / 1600 + s('rectd') / 15;
   if (sp === 'CB' || sp === 'S') return s('int') / 6 + s('pd') / 30;
   if (sp === 'LB') return s('tkl') / 180 + s('sck') / 8; // off-ball LBs get ~2-3 sacks a year
-  if (sp === 'OL' || sp === 'OT') return s('pan') / 90;
+  if (sp === 'OL' || sp === 'OT') return s('pan') / (sp === 'OT' ? 90 : 113); // guards/centers log more pancakes
   if (sp === 'K') return s('fgm') / 45;
   if (sp === 'DT') return s('sck') / 8 + s('tfl') / 14; // interior DL: fewer sacks/TFL than edge, same career weight
   return s('sck') / 12 + s('tfl') / 20; // realistic TFL (~10-15/yr for a starter) → same weight as before
@@ -2180,7 +2210,7 @@ function crFold(key, icon, title, summary, body) {
   return `<div class="fold ${open ? 'open' : ''}"><button class="fold-h" data-act="crFold" data-v="${key}" aria-expanded="${open}"><span class="fold-t">${icon} ${title}</span><span class="fold-s">${summary}</span><b>${open ? '▲' : '▼'}</b></button>${open ? `<div class="pb">${body}</div>` : ''}</div>`;
 }
 function renderCreator() {
-  const pgInfo = POS_GROUPS[CR.pg];
+  const pgInfo = pgOf(CR.pg, CR.sub);
   const natOK = hasNational(CR.region);
   if (CR.school === 'random') CR.school = 'Regular'; // lottery now lives in Quick Play only
   if (!natOK && CR.school === 'National_Powerhouse') CR.school = 'State_Powerhouse';
@@ -2611,11 +2641,13 @@ const ARCH = {
   RB: [[B('Home-Run Hitter', 'Jonronero', 'Home Run'), ['spd', 'brs']], [B('Power Back', 'Corredor de Poder', 'Running Back de Força'), ['pow', 'sk2']], [B('Slasher', 'Cortador', 'Cortador'), ['agi']], [B('Vision Runner', 'Corredor de Visión', 'Corredor de Visão'), ['sk1', 'iq']], [B('Workhorse Closer', 'Caballo de Carga', 'Burro de Carga'), ['clu']]],
   SP: [[B('Burner', 'Velocista', 'Velocista'), ['spd', 'brs']], [B('Technician', 'Técnico', 'Técnico'), ['sk2', 'iq']], [B('Ball Hawk', 'Halcón del Balón', 'Caçador de Bola'), ['sk1']], [B('Physical Enforcer', 'Ejecutor Físico', 'Executor Físico'), ['pow']], [B('Shifty Mover', 'Escurridizo', 'Escorregadio'), ['agi']], [B('Big-Game Hunter', 'Cazador de Grandes Juegos', 'Caçador de Jogos Grandes'), ['clu']]],
   BS: [[B('Space Athlete', 'Atleta de Espacio', 'Atleta de Espaço'), ['spd', 'brs', 'agi']], [B('Enforcer', 'Ejecutor', 'Executor'), ['sk2', 'pow']], [B('Mismatch Weapon', 'Arma de Desajuste', 'Arma de Mismatch'), ['sk1']], [B('Green-Dot Leader', 'Líder de la Defensa', 'Líder da Defesa'), ['iq']], [B('Clutch Playmaker', 'Figura Clutch', 'Figura Clutch'), ['clu']]],
+  LO: [[B('Mauler', 'Demoledor', 'Rolo Compressor'), ['pow', 'sk1']], [B('Pass-Pro Wall', 'Muro de Protección', 'Muralha'), ['sk2', 'agi']], [B('Athletic Mover', 'Atleta Móvil', 'Atleta Móvel'), ['agi', 'spd']], [B('Technician', 'Técnico', 'Técnico'), ['iq']], [B('Anchor', 'Ancla', 'Âncora'), ['clu']]],
+  LD: [[B('Run Stuffer', 'Tapón', 'Muralha Anti-Corrida'), ['sk1', 'pow']], [B('Disruptor', 'Disruptor', 'Disruptor'), ['sk2', 'brs']], [B('Athletic Mover', 'Atleta Móvil', 'Atleta Móvel'), ['agi', 'spd']], [B('Technician', 'Técnico', 'Técnico'), ['iq']], [B('Anchor', 'Ancla', 'Âncora'), ['clu']]],
   LM: [[B('Mauler', 'Demoledor', 'Rolo Compressor'), ['pow', 'sk1']], [B('Disruptor', 'Disruptor', 'Disruptor'), ['sk2', 'brs']], [B('Athletic Mover', 'Atleta Móvil', 'Atleta Móvel'), ['agi', 'spd']], [B('Technician', 'Técnico', 'Técnico'), ['iq']], [B('Anchor', 'Ancla', 'Âncora'), ['clu']]],
   K: [[B('Big Leg', 'Pierna Potente', 'Perna Potente'), ['sk2', 'pow']], [B('Metronome', 'Metrónomo', 'Metrônomo'), ['sk1', 'iq']], [B('Ice Man', 'Hombre de Hielo', 'Homem de Gelo'), ['clu']]]
 };
 function archetype() {
-  const a = G.ab, list = ARCH[G.posGroup];
+  const a = G.ab, list = ARCH[LINE_SIDE[G.subPos] || G.posGroup] || ARCH[G.posGroup];
   const best = list.map(([n, ks]) => [n, ks.reduce((s, k) => s + a[k], 0) / ks.length]).sort((x, y) => y[1] - x[1])[0];
   return best[1] < 40 ? B('Raw Project', 'Proyecto en Bruto', 'Projeto Cru') : best[0];
 }
@@ -2649,6 +2681,14 @@ const SW = {
     w: [B('Inconsistent hands; trusted more for contact than catches.', 'Manos inconsistentes; confían más en su contacto que en sus atrapadas.', 'Mãos inconsistentes; confiam mais no contato dele do que nas recepções.'), B('Drops in traffic are a concern.', 'Los balones caídos en tráfico preocupan.', 'As bolas derrubadas no tráfego preocupam.')] },
   BS_sk2: { s: [B('Violent, wrap-up tackler who finishes plays.', 'Tacleador violento que envuelve y termina las jugadas.', 'Tackler violento que abraça e termina as jogadas.'), B('Strikes with leverage; ball carriers fall backward.', 'Golpea con ventaja; los corredores caen hacia atrás.', 'Bate com vantagem; os corredores caem para trás.')],
     w: [B('Leaves his feet and misses tackles in space.', 'Se lanza y falla tacleadas en espacio abierto.', 'Se joga e erra tackles em espaço aberto.'), B('Form breaks down when he arrives late.', 'Su técnica se rompe cuando llega tarde.', 'A técnica se desfaz quando chega atrasado.')] },
+  LO_sk1: { s: [B('Moves bodies in the run game and finishes blocks.', 'Mueve cuerpos en el juego terrestre y termina bloqueos.', 'Move corpos no jogo corrido e termina os bloqueios.'), B('Drives defenders off the ball; pancakes pile up on film.', 'Saca a los defensores de la línea; abundan los pancakes en video.', 'Empurra os defensores para trás; os pancakes se acumulam no vídeo.')],
+    w: [B('Struggles to sustain blocks in the run game.', 'Le cuesta sostener bloqueos en el juego terrestre.', 'Tem dificuldade para sustentar bloqueios no jogo corrido.'), B('Plays high and loses leverage at the point of attack.', 'Juega alto y pierde palanca en el punto de ataque.', 'Joga alto e perde alavanca no ponto de ataque.')] },
+  LO_sk2: { s: [B('Wide base and a powerful punch in pass protection.', 'Base ancha y golpe potente en protección de pase.', 'Base larga e golpe forte na proteção de passe.'), B('Smooth kick-slide; mirrors speed rushers.', 'Paso de retroceso fluido; sigue a los rápidos.', 'Passo de recuo fluido; acompanha os velozes.')],
+    w: [B('Gets beat by speed off the edge.', 'La velocidad por fuera lo supera.', 'A velocidade por fora o supera.'), B('Wild hand placement; holding flags follow.', 'Manos descontroladas; le marcan muchos agarrones.', 'Mãos descontroladas; leva muitas faltas de segurar.')] },
+  LD_sk1: { s: [B('Sheds blocks quickly and closes on the ball.', 'Se quita bloqueos rápido y cierra sobre el balón.', 'Se livra dos bloqueios rápido e fecha na bola.'), B('Eats double teams and clogs running lanes.', 'Absorbe dobles bloqueos y tapa los carriles.', 'Absorve bloqueios duplos e fecha as brechas.')],
+    w: [B('Gets stuck on blocks against the run.', 'Se queda atorado en bloqueos contra la carrera.', 'Fica preso nos bloqueios contra a corrida.'), B('Washed out by double teams.', 'Lo arrastran los dobles bloqueos.', 'É arrastado pelos bloqueios duplos.')] },
+  LD_sk2: { s: [B('Disruptive; lives in the backfield.', 'Disruptivo; vive en el backfield rival.', 'Disruptivo; vive no backfield adversário.'), B('Violent hands and a real plan as a pass rusher.', 'Manos violentas y un plan real como pass rusher.', 'Mãos violentas e um plano real no pass rush.')],
+    w: [B('No real pass-rush plan.', 'Sin plan real de presión al pasador.', 'Sem plano real de pass rush.'), B('Lacks a counter when his first move fails.', 'No tiene contraataque cuando falla su primer movimiento.', 'Não tem contragolpe quando o primeiro movimento falha.')] },
   LM_sk1: { s: [B('Wide base and a powerful punch in pass protection.', 'Base ancha y golpe potente en protección de pase.', 'Base larga e golpe forte na proteção de passe.'), B('Moves bodies in the run game and finishes blocks.', 'Mueve cuerpos en el juego terrestre y termina bloqueos.', 'Move corpos no jogo corrido e termina os bloqueios.')],
     w: [B('Wild hand placement; holding flags follow.', 'Manos descontroladas; le marcan muchos agarrones.', 'Mãos descontroladas; leva muitas faltas de segurar.'), B('Gets beat by speed off the edge.', 'La velocidad por fuera lo supera.', 'A velocidade por fora o supera.')] },
   LM_sk2: { s: [B('Disruptive; lives in the backfield.', 'Disruptivo; vive en el backfield rival.', 'Disruptivo; vive no backfield adversário.'), B('Sheds blocks quickly and closes on the ball.', 'Se quita bloqueos rápido y cierra sobre el balón.', 'Se livra dos bloqueios rápido e fecha na bola.')],
@@ -2658,7 +2698,7 @@ const SW = {
   K_sk2: { s: [B('Big leg with real 55+ yard range.', 'Pierna potente con alcance real de 55+ yardas.', 'Perna potente com alcance real de 55+ jardas.'), B('Kickoffs routinely land in the end zone.', 'Sus patadas de salida llegan a la zona de anotación.', 'Os kickoffs caem na end zone.')],
     w: [B('Range tops out in the high 40s.', 'Su alcance llega apenas a 45-49 yardas.', 'O alcance chega só a 45-49 jardas.'), B('Lacks leg for long kicks in cold weather.', 'Le falta pierna para patadas largas con frío.', 'Falta perna para chutes longos no frio.')] }
 };
-const swKey = (k) => (isSkill(k) ? `${G.posGroup}_${k}` : k);
+const swKey = (k) => (isSkill(k) ? `${LINE_SIDE[G.subPos] || G.posGroup}_${k}` : k);
 
 function swLists() {
   const a = G.ab, w = PG().w, keys = ATTR_KEYS.slice();
@@ -2828,8 +2868,8 @@ const STAT_COLS = {
   RB: [['car', 'Att'], ['ryd', 'Yds'], ['ypc', 'Y/A'], ['rtd', 'TD'], ['brk', 'BrkTk'], ['rec', 'Rec'], ['recyd', 'RecYds']],
   WR: [['rec', 'Rec'], ['recyd', 'Yds'], ['ypr', 'Y/R'], ['rectd', 'TD']],
   CB: [['tkl', 'Tkl'], ['int', 'Int'], ['pd', 'PD'], ['tfl', 'TFL'], ['sck', 'Sk'], ['ff', 'FF']],
-  LB: [['tkl', 'Tkl'], ['sck', 'Sk'], ['tfl', 'TFL'], ['ff', 'FF'], ['pd', 'PD'], ['int', 'Int']],
-  OL: [['pan', 'Pancakes'], ['sa', 'SkAlw']],
+  LB: [['tkl', 'Tkl'], ['sck', 'Sk'], ['qbh', 'QBHit'], ['tfl', 'TFL'], ['ff', 'FF'], ['pd', 'PD'], ['int', 'Int']],
+  OL: [['pan', 'Pancakes'], ['sa', 'SkAlw'], ['pra', 'PrAlw']],
   K: [['fgm', 'FGM'], ['fga', 'FGA'], ['fgp', 'FG%'], ['lng', 'Lng'], ['fg50', '50+'], ['xp', 'XPM'], ['xpa', 'XPA']]
 };
 STAT_COLS.TE = STAT_COLS.WR; STAT_COLS.S = STAT_COLS.CB; STAT_COLS.DE = STAT_COLS.DL = STAT_COLS.DT = STAT_COLS.LB; STAT_COLS.OT = STAT_COLS.OL;
@@ -2838,7 +2878,8 @@ const STAT_HELP = {
   Int: B('interceptions', 'intercepciones', 'interceptações'), 'Y/A': B('yards per attempt', 'yardas por intento', 'jardas por tentativa'), BrkTk: B('broken tackles', 'tacleadas rotas', 'tackles quebrados'), Rec: B('receptions', 'recepciones', 'recepções'),
   RecYds: B('receiving yards', 'yardas por recepción', 'jardas por recepção'), 'Y/R': B('yards per reception', 'yardas por recepción', 'jardas por recepção'), Tkl: B('tackles', 'tacleadas', 'tackles'), PD: B('passes defended', 'pases defendidos', 'passes defendidos'),
   Sk: B('sacks', 'capturas (sacks)', 'sacks'), TFL: B('tackles for loss', 'tacleadas con pérdida', 'tackles para perda'), FF: B('forced fumbles', 'balones sueltos forzados', 'fumbles forçados'), Pancakes: B('pancake blocks (defender knocked flat)', 'bloqueos pancake (rival derribado)', 'bloqueios pancake (rival derrubado)'),
-  SkAlw: B('sacks allowed', 'capturas permitidas', 'sacks permitidos'), FGM: B('field goals made', 'goles de campo anotados', 'field goals convertidos'), FGA: B('field goals attempted', 'goles de campo intentados', 'field goals tentados'),
+  QBHit: B('QB hits (sacks + knockdowns)', 'golpes al QB (sacks + derribos)', 'golpes no QB (sacks + derrubadas)'), PrAlw: B('QB pressures allowed (lower is better)', 'presiones permitidas al QB (menos es mejor)', 'pressões permitidas no QB (menos é melhor)'),
+  SkAlw: B('sacks allowed (lower is better)', 'capturas permitidas (menos es mejor)', 'sacks permitidos (menos é melhor)'), FGM: B('field goals made', 'goles de campo anotados', 'field goals convertidos'), FGA: B('field goals attempted', 'goles de campo intentados', 'field goals tentados'),
   Rush: B('QB rushing attempts', 'acarreos del QB', 'corridas do QB'), RuYds: B('QB rushing yards', 'yardas por tierra del QB', 'jardas terrestres do QB'), RuTD: B('QB rushing touchdowns', 'touchdowns por tierra del QB', 'touchdowns terrestres do QB'),
   '50+': B('field goals from 50+ yards (made/attempted)', 'goles de campo de 50+ yardas (anotados/intentados)', 'field goals de 50+ jardas (convertidos/tentados)'), XPA: B('extra points attempted', 'puntos extra intentados', 'pontos extras tentados'),
   'FG%': B('field goal %', '% de goles de campo', '% de field goals'), Lng: B('longest field goal', 'gol de campo más largo', 'field goal mais longo'), XPM: B('extra points made (the 1-point kick after a touchdown)', 'puntos extra anotados (la patada de 1 punto tras un touchdown)', 'pontos extras convertidos (o chute de 1 ponto após um touchdown)')
