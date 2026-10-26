@@ -100,6 +100,7 @@ canvas{image-rendering:pixelated;image-rendering:crisp-edges}
 .h-season .r{color:var(--red)}
 .h-hon{font-size:14px;padding:0 5px;border:2px solid #2a3561;background:#000;color:var(--dim)}
 .h-hon.gold{border-color:var(--yellow);color:var(--yellow)}
+.h-hon.silver{border-color:#dfe5f2;color:#dfe5f2}
 .h-cell{background:#000;border:2px solid #2a3561;padding:4px 2px;text-align:center}
 .h-cell .v{font-family:var(--px);font-size:11px;color:var(--yellow);line-height:1.5;white-space:nowrap}
 .h-cell .k{font-size:15px;color:var(--dim);text-transform:uppercase;line-height:1}
@@ -326,6 +327,7 @@ canvas{image-rendering:pixelated;image-rendering:crisp-edges}
 .hs-row canvas{width:44px;height:44px;border:3px solid #000;background:#0b1530}
 .hs-nm{font-family:var(--px);font-size:9px;line-height:1.6;min-width:0;word-break:break-word}
 .hs-nm em{display:block;font-style:normal;font-family:var(--vt);font-size:15px;line-height:1.1;color:var(--dim)}
+.hs-rookie{font-style:normal;color:var(--green)}
 .hs-right{display:flex;flex-direction:column;align-items:flex-end;gap:4px;min-width:96px}
 .hs-earn{font-family:var(--vt);font-size:17px;font-weight:normal;color:var(--green);white-space:nowrap;text-align:right}
 .hs-earn::before{content:'💰 ';font-size:13px}
@@ -352,7 +354,7 @@ canvas{image-rendering:pixelated;image-rendering:crisp-edges}
 /* ---------- stacked trophy case ---------- */
 .trophies{display:grid;gap:6px}
 .trophy{display:grid;grid-template-columns:32px 1fr auto;gap:8px;align-items:center;background:#0e1531;border:3px solid #000;padding:5px 8px}
-.tr-ic{font-size:20px;text-align:center}
+.tr-ic{font-size:20px;text-align:center;line-height:0}.tr-ic .pix{filter:drop-shadow(2px 2px 0 #000)}
 .tr-n{font-size:19px;line-height:1.05}.tr-n em{display:block;font-style:normal;font-size:15px;color:var(--dim);margin-top:2px}
 .tr-x{font-family:var(--px);font-size:12px;color:var(--yellow);text-shadow:2px 2px 0 #000}
 /* ---------- short 16:9 frames (Poki desktop is ~470px tall) ---------- */
@@ -482,7 +484,8 @@ const POS_GROUPS = {
     w: { spd: .06, brs: .14, pow: .24, agi: .08, iq: .12, sk1: .16, sk2: .15, clu: .05 } },
   K: { n: B('K · Kicker', 'K · Pateador', 'K · Kicker'), subs: ['K'], sk1: B('Kick Accuracy', 'Precisión de Patada', 'Precisão'), sk2: B('Leg Power', 'Potencia de Pierna', 'Perna'), s1: 'KAC', s2: 'KPW',
     d1: B('Field goal %', '% de goles de campo', '% de field goals'), d2: B('Range (55+ yds)', 'Alcance (55+ yds)', 'Alcance (55+ jds)'),
-    w: { spd: .06, brs: .06, pow: .1, agi: .06, iq: .14, sk1: .24, sk2: .2, clu: .14 } }
+    // Kickers win jobs on accuracy, leg and nerve; athleticism doesn't matter (kick operation ≈1.3 s, eyes on the ball).
+    w: { spd: 0, brs: 0, pow: 0, agi: 0, iq: .08, sk1: .45, sk2: .30, clu: .17 } }
 };
 
 const REGIONS = [
@@ -897,7 +900,11 @@ function gridLabel(k) {
 }
 function attrLabel(k, pg) { const g = POS_GROUPS[pg || G.posGroup]; return k === 'sk1' ? tx(g.sk1) : k === 'sk2' ? tx(g.sk2) : tx(BASE_LBL[k]); }
 function shortLbl(k) { return k === 'sk1' ? PG().s1 : k === 'sk2' ? PG().s2 : SHORT[k]; }
-function calcOvr(ab, pg) { const w = POS_GROUPS[pg].w; let s = 0; ATTR_KEYS.forEach((k) => { s += ab[k] * w[k]; }); return clamp(Math.round(s), 20, 80); }
+// Kickers' OVR comes from only four ratings (accuracy, leg, clutch, IQ), so every training point lands on it; other
+// positions spread ~30% of OVR over athletic traits. K_CURVE keeps the kicker scale comparable to everyone else's
+// (same effort to become a starter or a star).
+const K_CURVE = 0.86;
+function calcOvr(ab, pg) { const w = POS_GROUPS[pg].w; let s = 0; ATTR_KEYS.forEach((k) => { s += ab[k] * w[k]; }); if (pg === 'K') s = 20 + (s - 20) * K_CURVE; return clamp(Math.round(s), 20, 80); }
 const ovr = () => calcOvr(G.ab, G.posGroup);
 const skill = () => clamp(Math.round((G.ab.sk1 + G.ab.sk2) / 2), 20, 80);
 // Training cost per +1 level (baseball-reference curve):
@@ -957,7 +964,7 @@ function computeRole() {
 function roleFor(o, s, th) {
   if (o >= th.star && s >= th.star - 3) return 'Star_Player';
   if (o >= th.start) return 'Starter';
-  if (s >= th.start + 3 && o >= th.start - 6) return 'Situational';
+  if (s >= th.start + 3 && o >= th.start - 6 && G.subPos !== 'K') return 'Situational'; // one kicker per team: no rotation
   return 'Bench';
 }
 // Aging by position (common NFL analytics findings): running backs hit the wall first, speed positions next,
@@ -1300,6 +1307,12 @@ function resolveEvent(m) {
 /* =====================================================================
    9. GAME-BY-GAME SEASON SIM
    ===================================================================== */
+// How much you lift your team's chances: starters by rating (continuous), part-timers a little.
+function impactOnTeam() {
+  if (!STARTS(G.role)) return G.role === 'Situational' ? (G.stage === 'PRO' ? 1 : 2) : 0;
+  const q = prodQ(), [b, k] = G.stage !== 'PRO' ? [5, 9] : G.subPos === 'QB' ? [4.5, 8] : [2.4, 6];
+  return Math.max(1, b + k * q);
+}
 function teamBase() {
   if (G.stage === 'HS') return { Regular: 46, State_Powerhouse: 63, National_Powerhouse: 76 }[hs().tier];
   if (G.stage === 'COL') return colStrength(col());
@@ -1364,14 +1377,52 @@ function beginSeason() {
 }
 const INJURIES = [B('High ankle sprain', 'Esguince alto de tobillo', 'Entorse alta de tornozelo'), B('Hamstring pull', 'Desgarre de isquiotibial', 'Lesão no posterior da coxa'), B('Sprained MCL', 'Esguince de ligamento colateral', 'Entorse do ligamento colateral'), B('Shoulder sprain', 'Esguince de hombro', 'Entorse no ombro'), B('Turf toe', 'Dedo de césped (turf toe)', 'Turf toe (dedão do pé)')];
 
-function gameStats(m) {
+// Pass-rush / strip helpers. "rush" is put on a pro-equivalent scale (HS/college ratings run lower), so a
+// starter at any level produces believable numbers. Calibrated to NFL norms (PFR): sacks — starting edge ~6-8,
+// elite 12-17, league leader 15-22.5; starting interior DL ~3-5, elite 8-12; off-ball LB ~1-3; S ~0-2; CB ~0-1.
+// Forced fumbles — leader 6-8 (record 10), elite rusher ~3-4, most starters 0-2.
+const STAGE_ADJ = () => (G.stage === 'HS' ? 22 : G.stage === 'COL' ? 10 : 0);
+const SACK_K = { DE: [14, 1.7], DL: [4, 1.6], DT: [-2, 1.6], LB: [-11, 1.6], S: [1, 0.3], CB: [0.5, 0.12] };
+const STRIP = { DE: 0.006, DL: 0.004, DT: 0.004, LB: 0.008, S: 0.009, CB: 0.011 };
+function rushRating(sp, a) {
+  const v = sp === 'DE' ? (a.sk2 + a.brs + a.spd) / 3 : sp === 'DT' || sp === 'DL' ? (a.sk2 + a.pow + a.brs) / 3 : sp === 'LB' ? (a.sk2 + a.brs) / 2 : (a.spd + a.brs) / 2;
+  return v + STAGE_ADJ();
+}
+function sackRoll(sp, a, m) {
+  const k = SACK_K[sp], p = clamp(m * (k[0] + (rushRating(sp, a) - 50) * k[1]), sp === 'CB' || sp === 'S' ? 0.3 : 1.5, 85);
+  return chance(p) ? (sp !== 'CB' && sp !== 'S' && chance(25) ? (sp === 'LB' ? 1.5 : 2) : 1) : 0;
+}
+const ffRoll = (sp, a, sck, tkl) => (chance(clamp(sck * 20 + tkl * STRIP[sp] * 100 * (1 + (a.pow - 50) * 0.01), 0, 60)) ? 1 : 0);
+// Production quality from RATINGS, not from the depth-chart badge: how far your OVR + position skill sits above your
+// level's starter line, in units of the starter→star gap, centred on a typical starter (0). Continuous — every rating
+// point moves it; the Star badge itself adds nothing. The role only decides playing time (SNAPS).
+function prodQ() {
+  const th = roleThresholds(), qr = (ovr() + skill()) / 2;
+  return clamp((qr - th.start) / Math.max(1, th.star - th.start) - 0.9, -1, 1);
+}
+const SNAPS = { Star_Player: 1, Starter: 1, Situational: 0.6, Bench: 0.25 };
+function gameStats(m, snaps, q, ctx) {
+  ctx = ctx || { pts: 21, close: false };
   const a = G.ab, sp = G.subPos, R = Math.round;
   if (sp === 'QB') {
-    const att = Math.max(1, R(ri(22, 36) * m)), pct = clamp(52 + (a.sk1 - 30) * 0.3 + (a.iq - 30) * 0.08 + rf(-8, 8), 30, 86), cmp = R(att * pct / 100);
-    const ypa = clamp(5.6 + (a.sk2 - 30) * 0.045 + (a.iq - 30) * 0.015 + rf(-1.6, 1.6), 2.5, 12), pyd = R(att * ypa);
-    const ptd = Math.max(0, R(att * clamp(0.025 + (a.sk1 + a.sk2 - 60) * 0.0005, 0.015, 0.075) + rf(-0.7, 0.7)));
-    const int = Math.max(0, R(att * clamp(0.035 - (a.iq - 30) * 0.0005, 0.006, 0.05) + rf(-0.7, 0.5)));
-    return { d: { cmp, att, pyd, ptd, int }, big: pyd >= 330 || ptd >= 4, line: `${cmp}/${att} · ${pyd} YDS · ${ptd} TD · ${int} INT` };
+    // NFL norms: a typical starter ~3,900 yds / ~24 TD / ~2.1% INT (7.0 Y/A, 4.4% TD); an elite (Star) QB
+    // ~4,500-5,000 yds / 35+ TD / ~1.4% INT (8+ Y/A, 6% TD). Efficiency is continuous in your ratings: q measures
+    // how far your QB rating (OVR + position skill) sits above your level's starter line, in units of the gap to the
+    // star line, centred on a typical starter (0). No step at the Star badge — every rating point counts.
+    const sa = STAGE_ADJ(), att = Math.max(1, R(ri(25, 37) * snaps * (1 + 0.06 * Math.max(0, q)))), pct = clamp(52 + (a.sk1 - 30) * 0.3 + (a.iq - 30) * 0.08 + rf(-8, 8), 30, 86), cmp = R(att * pct / 100);
+    const ypa = clamp(5.0 + 2.2 * q + (a.sk2 + sa - 30) * 0.04 + (a.iq + sa - 30) * 0.012 + rf(-1.6, 1.6), 2.5, 12), pyd = R(att * ypa);
+    const ptd = Math.max(0, R(att * clamp(0.019 + 0.034 * q + (a.sk1 + a.sk2 + 2 * sa - 60) * 0.00035, 0.012, 0.085) + rf(-0.7, 0.7)));
+    // INT rate: NFL league average ~2.2% of attempts (a typical starter throws ~10-12 a year), the best decision-makers
+    // ~1%, the league "leader" 15-21. Football IQ drives it, accuracy helps a little; HS/college throw more picks.
+    const iqE = a.iq + STAGE_ADJ(), acE = a.sk1 + STAGE_ADJ(), stI = G.stage === 'HS' ? 1.3 : G.stage === 'COL' ? 1.1 : 1;
+    const int = Math.max(0, R(att * stI * clamp(0.049 - 0.013 * q - (iqE - 30) * 0.0006 - (acE - 30) * 0.00005, 0.006, 0.06) + rf(-0.6, 0.6)));
+    // QB rushing (designed runs + scrambles) from athleticism. NFL: pocket passers ~25-40 carries / 100-200 yds / 1-2 TD;
+    // a Mahomes-type ~60 / 350 / 3-4; a true dual threat (Lamar Jackson, Jalen Hurts) 150+ / 800-1,200 / 6-15.
+    const mob = (a.spd + a.agi + a.brs) / 3 + sa;
+    const car = Math.max(0, R(snaps * (1.4 + Math.max(0, mob - 55) * 0.27) + rf(-1, 1.2)));
+    const ryd = R(car * clamp(2.6 + (mob - 50) * 0.11 + rf(-1.8, 2), -1, 14)), rtd = car ? (chance(car * clamp(3.2 + (a.pow + sa - 50) * 0.06, 2, 6)) ? 1 : 0) : 0;
+    return { d: { cmp, att, pyd, ptd, int, car, ryd, rtd }, big: pyd >= 330 || ptd + rtd >= 4 || ryd >= 80,
+      line: `${cmp}/${att} · ${pyd} YDS · ${ptd} TD · ${int} INT${car ? ` · ${car} RUSH ${ryd} YDS${rtd ? ` ${rtd} TD` : ''}` : ''}` };
   }
   if (sp === 'RB') {
     const car = Math.max(1, R(ri(12, 24) * m)), ypc = clamp(3.2 + (a.sk1 - 30) * 0.02 + (a.sk2 - 30) * 0.02 + (a.spd - 30) * 0.012 + rf(-1.6, 1.8), 0.5, 11);
@@ -1387,35 +1438,55 @@ function gameStats(m) {
     return { d: { rec, recyd, rectd }, big: recyd >= (wr ? 150 : 110) || rectd >= 3, line: `${rec} REC · ${recyd} YDS · ${rectd} TD` };
   }
   if (sp === 'CB' || sp === 'S') {
-    const tkl = R(ri(2, 7) * m) + (sp === 'S' ? R(2 * m) : 0), int = chance(m * (5 + (a.sk1 - 30) * 0.3)) ? 1 : 0, pd = R(rf(0, 2.4) * m * (0.7 + (a.sk2 - 30) * 0.02)) + int;
-    return { d: { tkl, int, pd }, big: (int >= 1 && pd >= 3) || tkl >= 12, line: `${tkl} TKL · ${int} INT · ${pd} PD` };
+    const tkl = R(ri(2, 7) * m) + (sp === 'S' ? R(2 * m) : 0), int = chance(m * (5 + (a.sk1 - 30) * 0.3)) ? 1 : 0, cb = sp === 'CB',
+      // Passes defended: NFL starting CB ~10-15 a year, the league leader ~20-25; safeties ~5-10.
+      pdP = clamp(m * (cb ? 40 + (a.sk2 + STAGE_ADJ() - 30) * 0.6 : 22 + (a.sk2 + STAGE_ADJ() - 30) * 0.4), 3, 92),
+      pd = (chance(pdP) ? (chance(15) ? 2 : 1) : 0) + int;
+    const sck = sackRoll(sp, a, m), ff = ffRoll(sp, a, sck, tkl);
+    // DB tackles for loss: run fits, screens and blitzes. NFL: a starting S ~2-4 a year, top box safeties ~7-9
+    // (e.g. Jamal Adams), starting CB ~1-2, slot/nickel CBs up to ~7 (Mike Hilton).
+    const stg = G.stage === 'HS' ? 1.6 : G.stage === 'COL' ? 1.25 : 1, rr = (a.brs + a.pow) / 2 + STAGE_ADJ(),
+      nsp = clamp(m * stg * (sp === 'S' ? 8 + (rr - 50) * 0.5 : 4 + (rr - 50) * 0.15), 0.5, 40), tfl = (chance(nsp) ? 1 : 0) + Math.floor(sck);
+    return { d: { tkl, int, pd, sck, ff, tfl }, big: (int >= 1 && pd >= 3) || tkl >= 12 || (int + ff >= 2), line: `${tkl} TKL · ${int} INT · ${pd} PD${sck ? ` · ${sck} SCK` : ''}${ff ? ` · ${ff} FF` : ''}` };
   }
   if (sp === 'LB' || sp === 'DE' || sp === 'DL' || sp === 'DT') {
-    const base = sp === 'LB' ? [4, 11] : [2, 6], sb = sp === 'LB' ? 10 : sp === 'DE' ? 18 : 12, sm = sp === 'LB' ? 0.35 : sp === 'DE' ? 0.55 : 0.45;
-    const tkl = R(ri(base[0], base[1]) * m), sck = chance(m * (sb + (a.sk2 - 30) * sm)) ? (chance(28) ? (sp === 'LB' ? 1.5 : 2) : 1) : 0, tfl = R(rf(0, 2) * m) + Math.floor(sck);
-    return { d: { tkl, sck, tfl }, big: sck >= 2 || tkl >= 13, line: `${tkl} TKL · ${sck} SCK · ${tfl} TFL` };
+    const base = sp === 'LB' ? [4, 11] : [2, 6];
+    const tkl = R(ri(base[0], base[1]) * m), sck = sackRoll(sp, a, m), // TFL = sacks + run/screen stops behind the line. Calibrated to the NFL (PFR, since 1999): a starting edge/LB
+    // posts ~8-14 a year, elite pass rushers ~18-23, the league leader ~22-28 (record 39). HS/college offenses
+    // give up more negative plays, so the non-sack part is scaled up there.
+    nsb = { DE: 19, LB: 24, DL: 12, DT: 12 }[sp], stg = G.stage === 'HS' ? 1.6 : G.stage === 'COL' ? 1.25 : 1,
+    nsp = m * stg * (nsb + (a.brs - 30) * 0.25 + (a.sk2 - 30) * 0.15), ns = chance(nsp) ? (chance(12) ? 2 : 1) : 0,
+    tfl = ns + Math.floor(sck), ff = ffRoll(sp, a, sck, tkl);
+    // Coverage plays: LBs (Hands) pick off ~0.5-1 a year and break up ~3-6; linemen bat down a couple, rare INT.
+    const lb = sp === 'LB', int = chance(lb ? m * (2 + (a.sk1 - 30) * 0.06) : m * 0.4) ? 1 : 0,
+      pd = (chance(lb ? m * (15 + (a.sk1 - 30) * 0.2) : m * (6 + (a.pow - 30) * 0.06)) ? 1 : 0) + int;
+    return { d: { tkl, sck, tfl, ff, int, pd }, big: sck >= 2 || tkl >= 13 || (sck >= 1 && ff) || int > 0, line: `${tkl} TKL · ${sck} SCK · ${tfl} TFL${ff ? ` · ${ff} FF` : ''}${int ? ` · ${int} INT` : ''}` };
   }
   if (sp === 'OL' || sp === 'OT') {
     const pan = R(ri(1, 5) * m * clamp(0.6 + (a.sk1 - 30) * 0.03, 0.4, 2.2)), sa = chance(m * clamp(35 - (a.sk1 - 30) * 1.0, 3, 40)) ? 1 : 0;
     return { d: { pan, sa }, big: pan >= 7 && sa === 0, line: `${pan} PANCAKES · ${sa} SACKS ALLOWED` };
   }
   // K
-  const fga = R(ri(0, 4) * Math.min(1, m * 1.1)), pct = clamp(64 + (a.sk1 - 30) * 0.6, 45, 97), rng = clamp(R(38 + (a.sk2 - 25) * 0.36), 30, 62);
-  let fgm = 0, lng = 0;
-  for (let i = 0; i < fga; i++) { const dist = ri(20, Math.max(25, rng + 3)); if (dist <= rng + 2 && chance(pct - Math.max(0, dist - 40) * 0.8)) { fgm++; lng = Math.max(lng, dist); } }
-  const xp = R(ri(1, 5) * Math.min(1, m * 1.1));
-  return { d: { fgm, fga, lng, xp }, big: fgm >= 4 || lng >= 52, line: `${fgm}/${fga} FG · LONG ${lng} · ${xp} XP` };
+  // Accuracy sets the make rate, Leg Power the range; in close games Clutch shifts it (pressure kicks).
+  // Extra points come from the team's touchdowns (not the kicker's rating); NFL XP% ≈ 95%.
+  const ksa = STAGE_ADJ(), clutch = ctx.close ? (a.clu + ksa - 60) * 0.25 : 0;
+  const fga = R(ri(0, 4) * snaps), pct = clamp(64 + (a.sk1 - 30) * 0.6 + clutch, 45, 97), rng = clamp(R(38 + (a.sk2 - 25) * 0.36), 30, 62);
+  let fgm = 0, lng = 0, fg50a = 0, fg50m = 0;
+  for (let i = 0; i < fga; i++) { const dist = ri(20, Math.max(25, rng + 3)), ok = dist <= rng + 2 && chance(pct - Math.max(0, dist - 40) * 0.8); if (dist >= 50) { fg50a++; if (ok) fg50m++; } if (ok) { fgm++; lng = Math.max(lng, dist); } }
+  const tds = snaps < 0.5 ? 0 : Math.max(0, R((ctx.pts - fgm * 3) / 7 + rf(-0.4, 0.4)));
+  let xpm = 0; for (let i = 0; i < tds; i++) if (chance(clamp(91 + (a.sk1 + ksa - 50) * 0.2 + clutch * 0.3, 80, 99.5))) xpm++;
+  return { d: { fgm, fga, lng, fg50m, fg50a, xp: xpm, xpa: tds }, big: fgm >= 4 || lng >= 52, line: `${fgm}/${fga} FG · LONG ${lng} · ${xpm}/${tds} XP` };
 }
 function mergeStats(dst, d) { Object.keys(d).forEach((k) => { if (k === 'lng') dst.lng = Math.max(dst.lng || 0, d[k]); else dst[k] = Math.round(((dst[k] || 0) + d[k]) * 10) / 10; }); }
 function seasonLine(st) {
   const s = (k) => st[k] || 0, sp = G.subPos;
-  if (sp === 'QB') return `${s('cmp')}/${s('att')} (${s('att') ? (s('cmp') / s('att') * 100).toFixed(1) : 0}%) · ${s('pyd').toLocaleString()} YDS · ${s('ptd')} TD · ${s('int')} INT · ${s('att') ? (s('pyd') / s('att')).toFixed(1) : 0} YPA`;
+  if (sp === 'QB') return `${s('cmp')}/${s('att')} (${s('att') ? (s('cmp') / s('att') * 100).toFixed(1) : 0}%) · ${s('pyd').toLocaleString()} YDS · ${s('ptd')} TD · ${s('int')} INT · ${s('att') ? (s('pyd') / s('att')).toFixed(1) : 0} YPA · ${s('car')} RUSH ${s('ryd').toLocaleString()} YDS ${s('rtd')} TD`;
   if (sp === 'RB') return `${s('car')} CAR · ${s('ryd').toLocaleString()} YDS (${s('car') ? (s('ryd') / s('car')).toFixed(1) : 0} YPC) · ${s('rtd')} TD · ${s('brk')} BRK TKL · ${s('rec')} REC`;
   if (sp === 'WR' || sp === 'TE') return `${s('rec')} REC · ${s('recyd').toLocaleString()} YDS · ${s('rectd')} TD`;
-  if (sp === 'CB' || sp === 'S') return `${s('tkl')} TKL · ${s('int')} INT · ${s('pd')} PD`;
+  if (sp === 'CB' || sp === 'S') return `${s('tkl')} TKL · ${s('int')} INT · ${s('pd')} PD · ${s('tfl')} TFL${s('sck') ? ` · ${s('sck')} SACKS` : ''} · ${s('ff')} FF`;
   if (sp === 'OL' || sp === 'OT') return `${s('pan')} PANCAKES · ${s('sa')} SACKS ALLOWED`;
-  if (sp === 'K') return `${s('fgm')}/${s('fga')} FG (${s('fga') ? (s('fgm') / s('fga') * 100).toFixed(1) : 0}%) · LONG ${s('lng')} · ${s('xp')} XP`;
-  return `${s('tkl')} TKL · ${s('sck')} SACKS · ${s('tfl')} TFL`;
+  if (sp === 'K') return `${s('fgm')}/${s('fga')} FG (${s('fga') ? (s('fgm') / s('fga') * 100).toFixed(1) : 0}%) · LONG ${s('lng')} · 50+ ${s('fg50m')}/${s('fg50a')} · ${s('xp')}/${s('xpa')} XP`;
+  return `${s('tkl')} TKL · ${s('sck')} SACKS · ${s('tfl')} TFL · ${s('ff')} FF · ${s('pd')} PD · ${s('int')} INT`;
 }
 
 function pushNextPost() {
@@ -1440,6 +1511,7 @@ function schedulePost() {
 }
 function handlePost(g) {
   const S = G.S, k = g.kind;
+  if (k === 'cc' && g.win) S.confChamp = true; // pro conference title game
   if (k === 'conf') {
     if (g.win) S.confChamp = true;
     // 2026 CFP (12 teams): 4 Power-conference champions + the best Group of 6 champion get automatic bids, the rest are at-large.
@@ -1463,7 +1535,7 @@ function playGame(quiet) {
     addFeed('bad', B('Injury', 'Lesión', 'Lesão'), B(`${S.inj.what.en} — out ${S.inj.len} games.`, `${S.inj.what.es} — fuera ${S.inj.len} juegos.`, `${S.inj.what.pt} — fora por ${S.inj.len} jogos.`));
     if (!quiet) { toast(L('INJURED!', '¡LESIONADO!', 'LESIONADO!'), 'bad'); SFX.play('bad'); }
   }
-  const pro = G.stage === 'PRO', us = (pro && g.kind !== 'reg' && ringHungry() ? 3 : 0) + teamBase() + (out ? -2 : (pro ? { Star_Player: G.subPos === 'QB' ? 8 : 5, Starter: G.subPos === 'QB' ? 4 : 2, Situational: 1, Bench: 0 } : { Star_Player: 10, Starter: 4, Situational: 2, Bench: 0 })[G.role]);
+  const pro = G.stage === 'PRO', us = (pro && g.kind !== 'reg' && ringHungry() ? 3 : 0) + teamBase() + (out ? -2 : impactOnTeam());
   let p = 1 / (1 + Math.exp(-(us - g.r) / (pro ? 11 : 9)));
   const close = Math.abs(us - g.r) < 7;
   if (close && !out && G.role !== 'Bench') p += (G.ab.clu - 45) * (pro ? 0.002 : 0.004);
@@ -1471,7 +1543,8 @@ function playGame(quiet) {
   const win = rand() < p, hi = ri(14, 45), lo = Math.max(0, hi - (close ? ri(1, 8) : ri(1, 24)));
   g.us = win ? hi : lo; g.them = win ? lo : hi; g.win = win; g.out = out;
   if (!out) {
-    const m = { Star_Player: 1.1, Starter: 0.9, Situational: 0.5, Bench: 0.2 }[G.role], gs = gameStats(m);
+    // m = playing time × rating-driven quality (≈0.9 for a typical starter, ≈1.1 for a star-level rating).
+    const snaps = SNAPS[G.role], q = prodQ(), m = 0.9 * snaps * (1 + 0.4 * Math.max(-0.5, q)), gs = gameStats(m, snaps, q, { pts: g.us, close });
     mergeStats(S.st, gs.d); g.line = gs.line;
     if (gs.big && G.role !== 'Bench') { S.hl++; g.big = true; }
     if (win && close && G.role !== 'Bench' && chance(40)) { g.clutch = true; S.hl++; }
@@ -1513,7 +1586,7 @@ const ALL_SLOTS = { QB: 1, RB: 1, WR: 3, TE: 1, OT: 2, OL: 3, DE: 2, DT: 2, DL: 
 function statIndex(st, n) {
   const s = (k) => (st[k] || 0) * 17 / Math.max(1, n), c1 = (x) => clamp(x, 0, 1.6);
   switch (G.subPos) {
-    case 'QB': return 0.5 * c1(s('pyd') / 4600) + 0.4 * c1(s('ptd') / 36) + 0.1 * clamp(1 - s('int') / 20, 0, 1);
+    case 'QB': return 0.5 * c1((s('pyd') + s('ryd')) / 4600) + 0.4 * c1((s('ptd') + s('rtd')) / 36) + 0.1 * clamp(1 - s('int') / 20, 0, 1); // total offense: dual threats count
     case 'RB': return 0.6 * c1(s('ryd') / 1650) + 0.3 * c1(s('rtd') / 14) + 0.1 * c1(s('recyd') / 440);
     case 'WR': return 0.6 * c1(s('recyd') / 1290) + 0.4 * c1(s('rectd') / 10);
     case 'TE': return 0.6 * c1(s('recyd') / 665) + 0.4 * c1(s('rectd') / 5.6);
@@ -1533,7 +1606,7 @@ const seasonPerf = (S, o) => o + clamp((statIndex(S.st, S.games.length) - 0.85) 
 // That makes every position equally hard: All-Star ≈ top 12.5% of starters (88 of ~700), All-League 1st ≈ the top 1–3.
 const STARTERS = { QB: 1, RB: 1, WR: 3, TE: 1, OT: 2, OL: 3, DE: 2, DT: 2, DL: 2, LB: 3, CB: 2, S: 2, K: 1 };
 const PRO_MEAN = 65.2; // league-wide starter level after position normalization
-const POS_BASE = { QB: 64.7, RB: 60.8, WR: 60.6, TE: 60.3, CB: 62.9, S: 63.6, LB: 60.4, DE: 62.3, DL: 61.8, DT: 65.1, OL: 63.2, OT: 62.4, K: 63.5 };
+const POS_BASE = { QB: 64.7, RB: 60.8, WR: 60.6, TE: 60.3, CB: 57.0, S: 60.35, LB: 59.75, DE: 60.15, DL: 58.15, DT: 60.9, OL: 63.2, OT: 62.4, K: 64.0 };
 function Phi(z) { const t = 1 / (1 + 0.2316419 * Math.abs(z)), d = 0.3989423 * Math.exp(-z * z / 2), q = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274)))); return z > 0 ? 1 - q : q; }
 function rankOf(score, mean, teams) { const n = (STARTERS[G.subPos] || 1) * teams; return Math.max(1, 1 + Math.floor((1 - Phi((score - mean) / 3.2)) * n + rf(-0.5, 0.5))); }
 function awardsVoting(S, o) {
@@ -1590,6 +1663,7 @@ function finishSeason() {
     G.peakStars = Math.max(G.peakStars, stars);
   } else if (G.stage === 'COL') {
     let fa = { Star_Player: 30, Starter: 14, Situational: 7, Bench: 3 }[G.role] + (S.champ ? 25 : 0) + (S.confChamp ? 6 : 0) + Math.min(8, S.hl * 2);
+    if (S.confChamp) honor('confcol', `${G.year} ${col().conf} Champion`, `${G.year} Campeón ${col().conf}`, `${G.year} Campeão ${col().conf}`);
     if (S.champ) honor('natcol', `${G.year} ${col().tier === 'FCS' ? 'FCS ' : ''}National Champion`, `${G.year} Campeón Nacional${col().tier === 'FCS' ? ' FCS' : ''}`, `${G.year} Campeão Nacional${col().tier === 'FCS' ? ' FCS' : ''}`);
     V = awardsVoting(S, o);
     if (V.conf.team === 1) { honor('allconf', `${G.year} All-${V.conf.name} 1st Team`, `${G.year} Primer Equipo ${V.conf.name}`, `${G.year} 1º Time ${V.conf.name}`); fa += 6; }
@@ -1606,6 +1680,7 @@ function finishSeason() {
     moneyRow = B(`Revenue share ${money(rv)} · NIL ${money(nil)} (scholarship covers tuition)`, `Reparto de ingresos ${money(rv)} · NIL ${money(nil)} (la beca cubre la matrícula)`, `Divisão de receita ${money(rv)} · NIL ${money(nil)} (a bolsa cobre a mensalidade)`);
   } else {
     let fa = { Star_Player: 35, Starter: 15, Situational: 7, Bench: 3 }[G.role] + Math.min(10, S.hl * 2);
+    if (S.confChamp) honor('confpro', `${G.year} Conference Champion`, `${G.year} Campeón de Conferencia`, `${G.year} Campeão de Conferência`);
     if (S.champ) { honor('league', `${G.year} League Champion`, `${G.year} Campeón de Liga`, `${G.year} Campeão da Liga`); fa += 30; }
     V = awardsVoting(S, o);
     if (V.asg.sel) { honor('allstar', `${G.year} All-Star`, `${G.year} All-Star`); fa += 12; }
@@ -1960,16 +2035,17 @@ function faWait() {
    ===================================================================== */
 function statUnits() {
   const s = (k) => G.pc[k] || 0, sp = G.subPos;
-  if (sp === 'QB') return s('pyd') / 6000 + s('ptd') / 45;
+  if (sp === 'QB') return (s('pyd') + s('ryd')) / 6000 + (s('ptd') + s('rtd')) / 43;
   if (sp === 'RB') return s('ryd') / 1600 + s('rtd') / 15;
   if (sp === 'WR' || sp === 'TE') return s('recyd') / 1600 + s('rectd') / 15;
   if (sp === 'CB' || sp === 'S') return s('int') / 6 + s('pd') / 30;
-  if (sp === 'LB') return s('tkl') / 180 + s('sck') / 15;
+  if (sp === 'LB') return s('tkl') / 180 + s('sck') / 8; // off-ball LBs get ~2-3 sacks a year
   if (sp === 'OL' || sp === 'OT') return s('pan') / 90;
   if (sp === 'K') return s('fgm') / 45;
-  return s('sck') / 12 + s('tfl') / 40;
+  if (sp === 'DT') return s('sck') / 8 + s('tfl') / 14; // interior DL: fewer sacks/TFL than edge, same career weight
+  return s('sck') / 12 + s('tfl') / 20; // realistic TFL (~10-15/yr for a starter) → same weight as before
 }
-const HOF_BAR = 108, HOF_FIRST = 150;
+const HOF_BAR = 80, HOF_FIRST = 120; // eased for a K-12 audience: ~1 in 4 casual careers, ~half of strong ones
 /* Hall of Legends = an arcade-style high-score board saved on this device (IndexedDB).
    Each entry is a compact snapshot (~1–2 KB): name, face, inducted levels, career totals, award counts and the
    real-world timestamp. Only the top HALL_MAX entries are kept, so it stays under ~100 KB even after years of use. */
@@ -1980,14 +2056,16 @@ function levelSnap(lv) {
   const cols = STAT_COLS[G.subPos];
   return { yrs: T.rows.length, gp: T.gp, gs: T.gs, w: T.w, l: T.l, teams: [...new Set(T.rows.map((x) => x.team))], cells: cols.map((c) => [c[1], statCell(T.tot, c[0])]) };
 }
-function addHallEntry() {
+// rookie = the very first finished career on this device that missed the HOF: it gets a placeholder spot so a new player
+// sees his name on the board once. It's removed as soon as a real Hall of Famer is added.
+function addHallEntry(rookie) {
   const H = G.hof, cnt = {};
   G.honors.forEach((x) => { cnt[x.k] = (cnt[x.k] || 0) + 1; });
   const e = { id: G.seed + '|' + Date.now(), ts: Date.now(), name: G.name, num: G.num, pos: G.subPos, av: Object.assign({}, G.av),
-    pro: !!H.pro, first: !!H.first, col: !!H.col, score: legacyScore(H), proScore: H.score, colScore: H.colScore,
+    pro: !!H.pro, first: !!H.first, col: !!H.col, rookie: !!rookie, score: rookie ? Math.round(H.score * 100 + H.colScore * 50) : legacyScore(H), proScore: H.score, colScore: H.colScore,
     peak: G.peakOvr, fame: G.fame, earn: grossEarn(), seed: G.seed, honors: cnt,
-    COL: H.col ? levelSnap('COL') : null, PRO: H.pro ? levelSnap('PRO') : null };
-  const all = (META.hall || []).filter((x) => x.ts).concat([e]).sort((a, b) => b.score - a.score), perGroup = {};
+    COL: H.col || (rookie && G.hist.some((h) => h.stage === 'COL')) ? levelSnap('COL') : null, PRO: H.pro || (rookie && G.hist.some((h) => h.stage === 'PRO')) ? levelSnap('PRO') : null };
+  const all = (META.hall || []).filter((x) => x.ts && (rookie || !x.rookie)).concat([e]).sort((a, b) => b.score - a.score), perGroup = {};
   META.hall = all.filter((x, i) => { const g = posGroupOf(x.pos); perGroup[g] = (perGroup[g] || 0) + 1; return i < HALL_MAX || perGroup[g] <= 10; });
   G.hallRank = META.hall.findIndex((x) => x.id === e.id) + 1;
 }
@@ -2003,12 +2081,12 @@ function hallBoard() {
   const rows = list.slice(0, 10).map((e, i) => `<button class="hs-row" data-act="hallCard" data-i="${i}">
       <span class="hs-rk m${Math.min(i + 1, 4)}">${i + 1}</span>
       <canvas data-hrow="${i}" width="48" height="48"></canvas>
-      <span class="hs-nm">${esc(e.name)}<em>${e.pos} · ${[e.pro ? (e.first ? L('PRO HOF 1st ballot', 'HOF PRO 1.ª boleta', 'HOF PRO 1ª votação') : L('PRO HOF', 'HOF PRO', 'HOF PRO')) : '', e.col ? L('COLLEGE HOF', 'HOF UNIV.', 'HOF UNIV.') : ''].filter(Boolean).join(' + ')}</em><em>${fmtTs(e.ts)}</em></span>
+      <span class="hs-nm">${esc(e.name)}<em>${e.pos} · ${e.rookie ? `<i class="hs-rookie">${L('FIRST CAREER', 'PRIMERA CARRERA', 'PRIMEIRA CARREIRA')}</i>` : ''}${[e.pro ? (e.first ? L('PRO HOF 1st ballot', 'HOF PRO 1.ª boleta', 'HOF PRO 1ª votação') : L('PRO HOF', 'HOF PRO', 'HOF PRO')) : '', e.col ? L('COLLEGE HOF', 'HOF UNIV.', 'HOF UNIV.') : ''].filter(Boolean).join(' + ')}</em><em>${fmtTs(e.ts)}</em></span>
       <span class="hs-right"><span class="hs-sc">${String(e.score).padStart(6, '0')}</span><b class="hs-earn" title="${L('Career earnings', 'Ganancias de carrera', 'Ganhos na carreira')}">${money(e.earn || 0)}</b></span></button>`).join('');
   return `<div class="panel hall"><div class="ph yh"><span>🏆 ${L('Hall of Legends', 'Salón de Leyendas', 'Hall das Lendas')}</span><span>${L('this device', 'este equipo', 'este aparelho')}</span></div>
-    ${tabs}${list.length ? `<div class="hs-list">${rows}</div><p class="hs-tip">${L('Tap a legend to open his card', 'Toca una leyenda para ver su tarjeta', 'Toque numa lenda para ver o card')}${list.length > 10 ? ` · ${list.length} ${L('saved', 'guardadas', 'salvas')}` : ''}</p>`
+    ${tabs}${list.length ? `<div class="hs-list">${rows}</div><p class="hs-tip">${list.some((x) => x.rookie) ? L('Your first career holds a spot until you make the Hall of Fame. ', 'Tu primera carrera guarda un lugar hasta que entres al Salón de la Fama. ', 'Sua primeira carreira guarda um lugar até você entrar no Hall da Fama. ') : ''}${L('Tap a legend to open his card', 'Toca una leyenda para ver su tarjeta', 'Toque numa lenda para ver o card')}${list.length > 10 ? ` · ${list.length} ${L('saved', 'guardadas', 'salvas')}` : ''}</p>`
       : total ? `<div class="pb" style="text-align:center"><p class="d">${L('No legends at this position yet.', 'Aún no hay leyendas en esta posición.', 'Ainda não há lendas nesta posição.')}</p></div>` : `<div class="pb" style="text-align:center"><p class="px y blink" style="font-size:11px;margin:10px 0">${L('NO LEGENDS YET', 'AÚN NO HAY LEYENDAS', 'AINDA NÃO HÁ LENDAS')}</p><p class="d">${L('Reach the Pro or College Hall of Fame to put your name on this board.', 'Entra al Salón de la Fama Pro o Universitario para poner tu nombre en esta tabla.', 'Entre no Hall da Fama Profissional ou Universitário para colocar seu nome neste placar.')}</p></div>`}
-    <div class="hs-foot">${META.careers || 0} ${L('careers played on this device', 'carreras jugadas en este equipo', 'carreiras jogadas neste aparelho')}</div></div>`;
+    <div class="hs-foot">${META.careers || 0} ${(META.careers || 0) === 1 ? L('career played on this device', 'carrera jugada en este equipo', 'carreira jogada neste aparelho') : L('careers played on this device', 'carreras jugadas en este equipo', 'carreiras jogadas neste aparelho')}</div></div>`;
 }
 function hallCardHTML(e, rank) {
   const lvl = (snap, title) => snap ? `<div class="hc-lv"><h5>${title}</h5>
@@ -2018,7 +2096,7 @@ function hallCardHTML(e, rank) {
   return `<div class="ph yh"><span>${ORD(rank)} · ${L('Legend Card', 'Tarjeta de Leyenda', 'Card de Lenda')}</span><span>${String(e.score).padStart(6, '0')}</span></div><div class="pb hallcard">
     <div class="hc-top"><canvas data-hav="1" width="48" height="48"></canvas><div><b class="px">${esc(e.name)} #${e.num}</b><p>${e.pos} · ${L('Peak', 'Pico', 'Auge')} OVR ${e.peak} · ${L('Fame', 'Fama', 'Fama')} ${e.fame}</p>
       <p class="y">${e.pro ? (e.first ? L('PRO HOF · FIRST BALLOT', 'HOF PRO · PRIMERA BOLETA', 'HOF PRO · PRIMEIRA VOTAÇÃO') : L('PRO HALL OF FAME', 'SALÓN DE LA FAMA PRO', 'HALL DA FAMA PRO')) : ''}${e.pro && e.col ? ' + ' : ''}${e.col ? L('COLLEGE HOF', 'HOF UNIVERSITARIO', 'HOF UNIVERSITÁRIO') : ''}</p>
-      <p class="d">${L('Inducted', 'Exaltado', 'Eleito')} ${fmtTs(e.ts)}</p></div></div>
+      ${e.rookie ? `<p class="d">${L('First career · not in the Hall of Fame yet', 'Primera carrera · aún no está en el Salón de la Fama', 'Primeira carreira · ainda não está no Hall da Fama')}</p>` : ''}<p class="d">${e.rookie ? L('Retired', 'Retirado', 'Aposentado') : L('Inducted', 'Exaltado', 'Eleito')} ${fmtTs(e.ts)}</p></div></div>
     <div class="hc-badges">${badge(H.mvp, 'MVP')}${badge(H.allpro, 'AL-1')}${badge(H.allpro2, 'AL-2')}${badge(H.allstar, 'AS')}${badge(H.league, L('Champ', 'Campeón', 'Campeão'))}${badge(H.helmet, 'POY')}${badge(H.allam, 'AA')}${badge(H.natcol, L('Nat. Champ', 'Camp. Nac.', 'Camp. Nac.'))}</div>
     ${lvl(e.PRO, L('Pro career', 'Carrera profesional', 'Carreira profissional'))}${lvl(e.COL, L('College career', 'Carrera universitaria', 'Carreira universitária'))}
     <p class="d mt">${L('Career earnings', 'Ganancias', 'Ganhos')} ${money(e.earn)}</p>
@@ -2041,6 +2119,7 @@ function retire() {
   if (G.proId || G.accrued > 0) META.unlock.goldVisor = true;
   if (G.hof.pro) META.unlock.goldJersey = true;
   if (G.hof.pro || G.hof.col) addHallEntry();
+  else if (!(META.hall || []).some((x) => x.ts)) addHallEntry(true); // first taste: an empty board always shows your first career
   saveMeta();
   Ads.gameplayStop();
   SFX.play(G.hof.pro ? 'td' : 'whistle');
@@ -2168,17 +2247,18 @@ const HON_SHORT = {
   mvp: B('⭐ MVP', '⭐ MVP', '⭐ MVP'), helmet: B('⭐ Golden Helmet', '⭐ Casco de Oro', '⭐ Capacete de Ouro'),
   allpro: B('All-League 1st', 'Liga 1.º Eq.', 'Liga 1º Time'), allpro2: B('All-League 2nd', 'Liga 2.º Eq.', 'Liga 2º Time'), allstar: B('All-Star', 'All-Star', 'All-Star'),
   allam: B('All-American', 'All-American', 'All-American'), allconf: B('All-Conf 1st', 'Conf. 1.º Eq.', 'Conf. 1º Time'), allconf2: B('All-Conf 2nd', 'Conf. 2.º Eq.', 'Conf. 2º Time'),
-  allstate: B('All-State', 'Sel. Estatal', 'Sel. Estadual')
+  allstate: B('All-State', 'Sel. Estatal', 'Sel. Estadual'),
+  confcol: B('Conf. Champ', 'Campeón Conf.', 'Campeão Conf.'), confpro: B('Conf. Champ', 'Campeón Conf.', 'Campeão Conf.')
 };
 function hudStats(st) {
   const s = (k) => st[k] || 0, n = (k) => s(k).toLocaleString('en-US'), sp = G.subPos;
-  if (sp === 'QB') return `${n('pyd')} YDS · ${s('ptd')} TD · ${s('int')} INT`;
+  if (sp === 'QB') return `${n('pyd')} YDS · ${s('ptd')} TD · ${s('int')} INT${s('rtd') ? ` · ${s('rtd')} RUSH TD` : ''}`;
   if (sp === 'RB') return `${n('ryd')} YDS · ${s('rtd')} TD · ${s('car') ? (s('ryd') / s('car')).toFixed(1) : 0} YPC`;
   if (sp === 'WR' || sp === 'TE') return `${s('rec')} REC · ${n('recyd')} YDS · ${s('rectd')} TD`;
-  if (sp === 'CB' || sp === 'S') return `${s('tkl')} TKL · ${s('int')} INT · ${s('pd')} PD`;
+  if (sp === 'CB' || sp === 'S') return `${s('tkl')} TKL · ${s('int')} INT · ${s('pd')} PD${s('ff') ? ` · ${s('ff')} FF` : ''}`;
   if (sp === 'OL' || sp === 'OT') return `${s('pan')} PANCAKES · ${s('sa')} SACKS ALW`;
   if (sp === 'K') return `${s('fgm')}/${s('fga')} FG · LONG ${s('lng')}`;
-  return `${s('tkl')} TKL · ${s('sck')} SACKS · ${s('tfl')} TFL`;
+  return `${s('tkl')} TKL · ${s('sck')} SACKS · ${s('tfl')} TFL${s('ff') ? ` · ${s('ff')} FF` : ''}`;
 }
 function hudSeason() {
   if (G.phase === 'retired' || G.stage === 'RET') return '';
@@ -2188,10 +2268,10 @@ function hudSeason() {
   const out = live && S.inj && S.gi >= S.inj.st && S.gi < S.inj.st + S.inj.len ? ` <span class="r">${L('INJ', 'LES', 'LES')}</span>` : '';
   // Titles: while the season is live they come straight from the bracket (so they show the moment you win),
   // and the matching honor entries are skipped so a title is never listed twice.
-  const TITLE = /^(state|natprep|natcol|league)$/;
-  const keys = live ? [S.stateChamp && 'state', S.champ === 'hs_nat' && 'natprep', S.champ === 'cfpf' && 'natcol', S.champ === 'big' && 'league'].filter(Boolean) : [];
+  const TITLE = /^(state|natprep|natcol|league|confcol|confpro)$/;
+  const keys = live ? [S.stateChamp && 'state', S.champ === 'hs_nat' && 'natprep', S.confChamp && (G.stage === 'PRO' ? 'confpro' : 'confcol'), S.champ === 'cfpf' && 'natcol', S.champ === 'big' && 'league'].filter(Boolean) : [];
   G.honors.forEach((x) => { if (x.y === y && HON_SHORT[x.k] && !(live && TITLE.test(x.k)) && !keys.includes(x.k)) keys.push(x.k); });
-  const hon = keys.map((k) => `<span class="h-hon${TITLE.test(k) || k === 'mvp' || k === 'helmet' ? ' gold' : ''}">${tx(HON_SHORT[k])}</span>`).join('');
+  const hon = keys.map((k) => `<span class="h-hon${/^conf/.test(k) ? ' silver' : TITLE.test(k) || k === 'mvp' || k === 'helmet' ? ' gold' : ''}">${tx(HON_SHORT[k])}</span>`).join('');
   const champ = '';
   return `<div class="h-season"><span class="h-yr">${live ? y : L(`${y} final`, `${y} final`, `${y} final`)}</span><b>${rec}</b>${out}<span class="h-st">${hudStats(st)}</span>${champ}${hon}</div>`;
 }
@@ -2744,25 +2824,27 @@ function viewMoney() {
 }
 
 const STAT_COLS = {
-  QB: [['cmp', 'Cmp'], ['att', 'Att'], ['pct', 'Cmp%'], ['pyd', 'Yds'], ['ptd', 'TD'], ['int', 'Int'], ['ypa', 'Y/A']],
+  QB: [['cmp', 'Cmp'], ['att', 'Att'], ['pct', 'Cmp%'], ['pyd', 'Yds'], ['ptd', 'TD'], ['int', 'Int'], ['ypa', 'Y/A'], ['car', 'Rush'], ['ryd', 'RuYds'], ['rtd', 'RuTD']],
   RB: [['car', 'Att'], ['ryd', 'Yds'], ['ypc', 'Y/A'], ['rtd', 'TD'], ['brk', 'BrkTk'], ['rec', 'Rec'], ['recyd', 'RecYds']],
   WR: [['rec', 'Rec'], ['recyd', 'Yds'], ['ypr', 'Y/R'], ['rectd', 'TD']],
-  CB: [['tkl', 'Tkl'], ['int', 'Int'], ['pd', 'PD']],
-  LB: [['tkl', 'Tkl'], ['sck', 'Sk'], ['tfl', 'TFL']],
+  CB: [['tkl', 'Tkl'], ['int', 'Int'], ['pd', 'PD'], ['tfl', 'TFL'], ['sck', 'Sk'], ['ff', 'FF']],
+  LB: [['tkl', 'Tkl'], ['sck', 'Sk'], ['tfl', 'TFL'], ['ff', 'FF'], ['pd', 'PD'], ['int', 'Int']],
   OL: [['pan', 'Pancakes'], ['sa', 'SkAlw']],
-  K: [['fgm', 'FGM'], ['fga', 'FGA'], ['fgp', 'FG%'], ['lng', 'Lng'], ['xp', 'XPM']]
+  K: [['fgm', 'FGM'], ['fga', 'FGA'], ['fgp', 'FG%'], ['lng', 'Lng'], ['fg50', '50+'], ['xp', 'XPM'], ['xpa', 'XPA']]
 };
 STAT_COLS.TE = STAT_COLS.WR; STAT_COLS.S = STAT_COLS.CB; STAT_COLS.DE = STAT_COLS.DL = STAT_COLS.DT = STAT_COLS.LB; STAT_COLS.OT = STAT_COLS.OL;
 const STAT_HELP = {
   Cmp: B('completions', 'pases completos', 'passes completos'), Att: B('attempts', 'intentos', 'tentativas'), 'Cmp%': B('completion %', '% de pases completos', '% de passes completos'), Yds: B('yards', 'yardas', 'jardas'), TD: B('touchdowns', 'touchdowns', 'touchdowns'),
   Int: B('interceptions', 'intercepciones', 'interceptações'), 'Y/A': B('yards per attempt', 'yardas por intento', 'jardas por tentativa'), BrkTk: B('broken tackles', 'tacleadas rotas', 'tackles quebrados'), Rec: B('receptions', 'recepciones', 'recepções'),
   RecYds: B('receiving yards', 'yardas por recepción', 'jardas por recepção'), 'Y/R': B('yards per reception', 'yardas por recepción', 'jardas por recepção'), Tkl: B('tackles', 'tacleadas', 'tackles'), PD: B('passes defended', 'pases defendidos', 'passes defendidos'),
-  Sk: B('sacks', 'capturas (sacks)', 'sacks'), TFL: B('tackles for loss', 'tacleadas con pérdida', 'tackles para perda'), Pancakes: B('pancake blocks (defender knocked flat)', 'bloqueos pancake (rival derribado)', 'bloqueios pancake (rival derrubado)'),
+  Sk: B('sacks', 'capturas (sacks)', 'sacks'), TFL: B('tackles for loss', 'tacleadas con pérdida', 'tackles para perda'), FF: B('forced fumbles', 'balones sueltos forzados', 'fumbles forçados'), Pancakes: B('pancake blocks (defender knocked flat)', 'bloqueos pancake (rival derribado)', 'bloqueios pancake (rival derrubado)'),
   SkAlw: B('sacks allowed', 'capturas permitidas', 'sacks permitidos'), FGM: B('field goals made', 'goles de campo anotados', 'field goals convertidos'), FGA: B('field goals attempted', 'goles de campo intentados', 'field goals tentados'),
+  Rush: B('QB rushing attempts', 'acarreos del QB', 'corridas do QB'), RuYds: B('QB rushing yards', 'yardas por tierra del QB', 'jardas terrestres do QB'), RuTD: B('QB rushing touchdowns', 'touchdowns por tierra del QB', 'touchdowns terrestres do QB'),
+  '50+': B('field goals from 50+ yards (made/attempted)', 'goles de campo de 50+ yardas (anotados/intentados)', 'field goals de 50+ jardas (convertidos/tentados)'), XPA: B('extra points attempted', 'puntos extra intentados', 'pontos extras tentados'),
   'FG%': B('field goal %', '% de goles de campo', '% de field goals'), Lng: B('longest field goal', 'gol de campo más largo', 'field goal mais longo'), XPM: B('extra points made (the 1-point kick after a touchdown)', 'puntos extra anotados (la patada de 1 punto tras un touchdown)', 'pontos extras convertidos (o chute de 1 ponto após um touchdown)')
 };
-const AWARD_CODE = { natprep: 'NatCh', state: 'StCh', allstate: 'AllSt', natcol: 'NatCh', allconf: 'AllConf', allconf2: 'AllConf2', allam: 'AA', helmet: 'POY', league: 'Champ', allstar: 'AS', allpro: 'AL-1', allpro2: 'AL-2', mvp: 'MVP' };
-const AWARD_HELP = [['StCh', B('state champion', 'campeón estatal', 'campeão estadual')], ['NatCh', B('national champion', 'campeón nacional', 'campeão nacional')], ['AllSt', B('All-State', 'Selección Estatal', 'Seleção Estadual')], ['AllConf', B('All-Conference 1st team', 'Primer equipo de conferencia', '1º time da conferência')], ['AllConf2', B('All-Conference 2nd team', 'Segundo equipo de conferencia', '2º time da conferência')],
+const AWARD_CODE = { natprep: 'NatCh', state: 'StCh', allstate: 'AllSt', natcol: 'NatCh', allconf: 'AllConf', allconf2: 'AllConf2', allam: 'AA', helmet: 'POY', league: 'Champ', confpro: 'ConfCh', confcol: 'ConfCh', allstar: 'AS', allpro: 'AL-1', allpro2: 'AL-2', mvp: 'MVP' };
+const AWARD_HELP = [['StCh', B('state champion', 'campeón estatal', 'campeão estadual')], ['ConfCh', B('conference champion', 'campeón de conferencia', 'campeão de conferência')], ['NatCh', B('national champion', 'campeón nacional', 'campeão nacional')], ['AllSt', B('All-State', 'Selección Estatal', 'Seleção Estadual')], ['AllConf', B('All-Conference 1st team', 'Primer equipo de conferencia', '1º time da conferência')], ['AllConf2', B('All-Conference 2nd team', 'Segundo equipo de conferencia', '2º time da conferência')],
   ['AA', B('All-American', 'All-American', 'All-American')], ['POY', B('Golden Helmet (Player of the Year)', 'Casco de Oro (Jugador del Año)', 'Capacete de Ouro (Jogador do Ano)')], ['AS', B('All-Star (88 per year)', 'All-Star (88 por año)', 'All-Star (88 por ano)')],
   ['AL-1', B('All-League 1st team', 'Primer equipo de la Liga', '1º time da Liga')], ['AL-2', B('All-League 2nd team', 'Segundo equipo de la Liga', '2º time da Liga')], ['MVP', B('league MVP', 'MVP de la liga', 'MVP da liga')], ['Champ', B('league champion', 'campeón de liga', 'campeão da liga')]];
 function statCell(st, k) {
@@ -2773,6 +2855,7 @@ function statCell(st, k) {
     case 'ypc': return f1(s('ryd'), s('car'));
     case 'ypr': return f1(s('recyd'), s('rec'));
     case 'fgp': return s('fga') ? (s('fgm') / s('fga') * 100).toFixed(1) : '—';
+    case 'fg50': return `${s('fg50m')}/${s('fg50a')}`;
     default: { const v = s(k); return Number.isInteger(v) ? v.toLocaleString('en-US') : v.toFixed(1); }
   }
 }
@@ -2782,10 +2865,32 @@ function levelTotals(lv) {
   rows.forEach((x) => { if (x.st) mergeStats(tot, x.st); gp += x.gp || 0; gs += x.gs || 0; w += x.w || 0; l += x.l || 0; });
   return { rows, tot, gp, gs, w, l };
 }
+
+// ---- Pixel-art award icons (12×12) — same look in the Trophy Case and on the Career Card PNG ----
+const PIX_PAL = { K: '#000', Y: '#ffd23f', O: '#c98f12', W: '#fbfaf2', S: '#dfe5f2', s: '#8a93ab', C: '#d9893b', c: '#8a5a24', R: '#ff5a5f', B: '#4cc3ff', P: '#c39bff' };
+const PIX = {
+  ring: ['.KKKKKKKKKK.', 'KYYYYYYYYYYK', 'KYWBBBBBBYYK', 'KYBWBBBBBBYK', 'KYBBBWBBBBYK', 'KYYBBBBBBYYK', '.KYYYYYYYYK.', '.KOKKKKKKOK.', '.KOK....KOK.', '.KOK....KOK.', '..KOOOOOOK..', '...KKKKKK...'],
+  cup: ['..KKKKKKKK..', 'KKKYYWYYYKKK', 'K.KYYWYYYK.K', 'K.KYYYYYYK.K', '.KKYYYYYYKK.', '...KYYYYK...', '....KYYK....', '....KOOK....', '...KYYYYK...', '..KYYYYYYK..', '..KOOOOOOK..', '..KKKKKKKK..'],
+  crown: ['............', '............', 'K....KK....K', 'KK..KYYK..KK', 'KYKKYYYYKKYK', 'KYYYYRRYYYYK', 'KYYYYYYYYYYK', 'KYWYYYYYYWYK', 'KOOOOOOOOOOK', 'KKKKKKKKKKKK', '............', '............'],
+  medal: ['..KK....KK..', '..KBK..KRK..', '...KBKKRK...', '....KBRK....', '...KKKKKK...', '..KYYYYYYK..', '.KYYWYYYYOK.', '.KYWYYYYYOK.', '.KYYYYYYYOK.', '.KYYYYYYOOK.', '..KOOOOOOK..', '...KKKKKK...'],
+  star: ['.....KK.....', '....KYYK....', '....KYYK....', 'KKKKKYYKKKKK', 'KYYYYYYYYYYK', '.KYYYWYYYYK.', '..KYYYYYYK..', '..KYYYYYYK..', '.KYYYKKYYYK.', '.KYYK..KYYK.', 'KYKK....KKYK', 'KK........KK'],
+  helmet: ['............', '...KKKKKK...', '..KYYYYYYK..', '.KYYWYYYYYK.', '.KYWYYYYYYK.', 'KYYYYYYKKKKK', 'KYYYYYKWKWK.', 'KYYYYYKKKKK.', 'KOYYYYKWKWK.', '.KOOOOKKKKK.', '..KKKK......', '............'],
+  shield: ['.KKKKKKKKKK.', '.KBBBBRWRWK.', '.KBWBBWRWRK.', '.KBBBBRWRWK.', '.KRWRWRWRWK.', '.KWRWRWRWRK.', '.KRWRWRWRWK.', '..KRWRWRWK..', '..KWRWRWRK..', '...KRWRWK...', '....KWRK....', '.....KK.....']
+};
+const SILVER = { Y: 'S', O: 's' }, BRONZE = { Y: 'C', O: 'c' };
+// [shape, recolor]
+const HONOR_ICON = { league: ['ring'], mvp: ['crown'], allpro: ['medal'], allpro2: ['medal', SILVER], allstar: ['star'], helmet: ['helmet'], allam: ['shield'],
+  natcol: ['cup'], natprep: ['cup'], state: ['cup'], confpro: ['cup', SILVER], confcol: ['cup', SILVER], allconf: ['medal'], allconf2: ['medal', SILVER], allstate: ['medal', BRONZE] };
+function pixGrid(k) { const [shape, map] = HONOR_ICON[k] || ['star']; return PIX[shape].map((row) => [...row].map((ch) => (map && map[ch]) || ch)); }
+function pixSVG(k, px) {
+  let r = ''; pixGrid(k).forEach((row, y) => row.forEach((ch, x) => { if (ch !== '.') r += `<rect x="${x}" y="${y}" width="1.02" height="1.02" fill="${PIX_PAL[ch]}"/>`; }));
+  return `<svg class="pix" width="${px}" height="${px}" viewBox="0 0 12 12" shape-rendering="crispEdges" aria-hidden="true">${r}</svg>`;
+}
+function pixDraw(c, k, x0, y0, sc) { pixGrid(k).forEach((row, y) => row.forEach((ch, x) => { if (ch !== '.') { c.fillStyle = PIX_PAL[ch]; c.fillRect(x0 + x * sc, y0 + y * sc, sc, sc); } })); }
 const HONOR_ORDER = [
   ['league', B('League Champion', 'Campeón de Liga', 'Campeão da Liga'), '💍'], ['mvp', B('League MVP', 'MVP de la Liga', 'MVP da Liga'), '👑'], ['allpro', B('All-League 1st Team', 'Primer Equipo de la Liga', '1º Time da Liga'), '🥇'],
-  ['allpro2', B('All-League 2nd Team', 'Segundo Equipo de la Liga', '2º Time da Liga'), '🥈'], ['allstar', B('All-Star', 'All-Star', 'All-Star'), '⭐'], ['helmet', B('Golden Helmet (Player of the Year)', 'Casco de Oro (Jugador del Año)', 'Capacete de Ouro (Jogador do Ano)'), '🏈'],
-  ['natcol', B('College National Champion', 'Campeón Nacional Universitario', 'Campeão Nacional Universitário'), '🏆'], ['allam', B('All-American', 'All-American', 'All-American'), '🎖'], ['allconf', B('All-Conference 1st Team', 'Primer Equipo de Conferencia', '1º Time da Conferência'), '🏅'],
+  ['allpro2', B('All-League 2nd Team', 'Segundo Equipo de la Liga', '2º Time da Liga'), '🥈'], ['confpro', B('Conference Champion', 'Campeón de Conferencia', 'Campeão de Conferência'), '🏆'], ['allstar', B('All-Star', 'All-Star', 'All-Star'), '⭐'], ['helmet', B('Golden Helmet (Player of the Year)', 'Casco de Oro (Jugador del Año)', 'Capacete de Ouro (Jogador do Ano)'), '🏈'],
+  ['natcol', B('College National Champion', 'Campeón Nacional Universitario', 'Campeão Nacional Universitário'), '🏆'], ['confcol', B('College Conference Champion', 'Campeón de Conferencia Universitario', 'Campeão de Conferência Universitário'), '🏆'], ['allam', B('All-American', 'All-American', 'All-American'), '🎖'], ['allconf', B('All-Conference 1st Team', 'Primer Equipo de Conferencia', '1º Time da Conferência'), '🏅'],
   ['allconf2', B('All-Conference 2nd Team', 'Segundo Equipo de Conferencia', '2º Time da Conferência'), '🏅'], ['natprep', B('National Prep Champion', 'Campeón Nacional Prep', 'Campeão Nacional Prep'), '🏆'], ['state', B('State Champion', 'Campeón Estatal', 'Campeão Estadual'), '🏆'],
   ['allstate', B('All-State', 'Selección Estatal', 'Seleção Estadual'), '🏅']
 ];
@@ -2813,7 +2918,7 @@ function viewCareer() {
   const teams = [...new Map(G.hist.map((x) => [x.abbr || abbrOf(x.team), x.team])).entries()];
   const used = cols.map((c) => c[1]).filter((k) => STAT_HELP[k]);
   const stacks = HONOR_ORDER.map(([k, lbl, ic]) => [k, lbl, ic, G.honors.filter((x) => x.k === k).map((x) => x.y)]).filter((s) => s[3].length);
-  return `<div class="panel"><div class="ph yh"><span>${L('Trophy Case', 'Vitrina', 'Estante')}</span><span>${honors.length}</span></div><div class="pb">${stacks.length ? `<div class="trophies">${stacks.map(([k, lbl, ic, ys]) => `<div class="trophy"><span class="tr-ic">${ic}</span><span class="tr-n">${tx(lbl)}<em>${ys.join(' · ')}</em></span><b class="tr-x">×${ys.length}</b></div>`).join('')}</div>` : `<p class="d">${L('Empty — for now.', 'Vacía — por ahora.', 'Vazia — por enquanto.')}</p>`}</div></div>
+  return `<div class="panel"><div class="ph yh"><span>${L('Trophy Case', 'Vitrina', 'Estante')}</span><span>${honors.length}</span></div><div class="pb">${stacks.length ? `<div class="trophies">${stacks.map(([k, lbl, ic, ys]) => `<div class="trophy"><span class="tr-ic">${pixSVG(k, 30)}</span><span class="tr-n">${tx(lbl)}<em>${ys.join(' · ')}</em></span><b class="tr-x">×${ys.length}</b></div>`).join('')}</div>` : `<p class="d">${L('Empty — for now.', 'Vacía — por ahora.', 'Vazia — por enquanto.')}</p>`}</div></div>
     <div class="panel"><div class="ph"><span>${esc(G.name)} · ${G.subPos} · ${L('Stats', 'Estadísticas', 'Estatísticas')}</span><span>${L('swipe ⇆', 'desliza ⇆', 'deslize ⇆')}</span></div>
       ${G.hist.length ? `<div class="sref"><table>${head}${body}</table></div>
       <div class="pb sref-key"><p><b>${L('Teams', 'Equipos', 'Times')}:</b> ${teams.map(([a, n]) => `<b class="y">${esc(a)}</b> ${esc(n)}`).join(' · ')}</p>
@@ -2829,9 +2934,14 @@ const openYears = new Set(), closedYears = new Set();
 /* =====================================================================
    15. CAREER CARD PNG
    ===================================================================== */
+// Career card PNG: header, trophy summary (pixel icons, stacked counts), level totals (auto-sized columns), seed.
+const CARD_COLS = { QB: [['pyd', 'Yds'], ['ptd', 'TD'], ['int', 'Int'], ['pct', 'Cmp%'], ['ryd', 'RuYds']], K: [['fgm', 'FGM'], ['fga', 'FGA'], ['fgp', 'FG%'], ['lng', 'Lng'], ['fg50', '50+']] };
 function careerPNG() {
-  const W = 900, H = 700, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-  const c = cv.getContext('2d'), f1 = '"Press Start 2P", monospace', f2 = '"VT323", monospace';
+  const W = 900, f1 = '"Press Start 2P", monospace', f2 = '"VT323", monospace';
+  const stacks = HONOR_ORDER.map(([k, lbl]) => [k, lbl, G.honors.filter((x) => x.k === k).length]).filter((x) => x[2]);
+  const hRows = Math.max(1, Math.ceil(stacks.length / 2)), honTop = 236, tabTop = honTop + hRows * 40 + 44, H = Math.max(640, tabTop + 3 * 42 + 40 + 110);
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const c = cv.getContext('2d');
   c.fillStyle = '#121a33'; c.fillRect(0, 0, W, H);
   for (let x = 0; x < W; x += 60) { c.fillStyle = (x / 60) % 2 ? '#287d33' : '#2e8b3a'; c.fillRect(x, H - 90, 60, 90); }
   c.fillStyle = 'rgba(255,255,255,.35)'; for (let x = 0; x < W; x += 120) c.fillRect(x, H - 90, 3, 90);
@@ -2844,26 +2954,39 @@ function careerPNG() {
   c.fillText(`${L('Peak', 'Pico', 'Auge')} OVR ${G.peakOvr} · ${L('Peak stars', 'Estrellas', 'Estrelas')} ${G.peakStars}★ · ${L('Fame', 'Fama', 'Fama')} ${G.fame}`, 228, 140);
   c.fillText(`${L('Earnings', 'Ganancias', 'Ganhos')} ${money(grossEarn())} · ${G.proId ? proT(G.proId).name : G.colId ? col().name : hs().name}`, 228, 172);
   c.fillStyle = '#3ddc84'; c.fillText(`${G.hof && G.hof.pro ? L('HALL OF LEGENDS · CLASS OF ', 'SALÓN DE LEYENDAS · CLASE ', 'HALL DAS LENDAS · TURMA ') + (G.retiredYear + 5) : L('Career complete', 'Carrera completa', 'Carreira completa')}${G.hof && G.hof.col ? L(' · College HOF', ' · HOF Universitario', ' · HOF Universitário') : ''}`, 228, 204);
-  c.fillStyle = '#fbfaf2'; c.font = `24px ${f2}`;
-  const hon = G.honors.slice(-6);
-  hon.forEach((h, i) => c.fillText('🏆 ' + tx(h.t), 40 + (i % 2) * 420, 248 + Math.floor(i / 2) * 28));
-  if (!hon.length) c.fillText(L('No trophies — but what a ride.', 'Sin trofeos — pero qué viaje.', 'Sem troféus — mas que jornada.'), 40, 248);
-  // career totals by level
-  const cols = STAT_COLS[G.subPos].slice(0, 5), X = [40, 205, 255, 310, 365];
-  const colX = (i) => 490 + i * 78, top = 360;
-  c.fillStyle = '#0a0f20'; c.fillRect(30, top - 26, W - 60, 168);
-  c.fillStyle = '#a7b1d4'; c.font = `10px ${f1}`;
-  [L('LEVEL', 'NIVEL', 'NÍVEL'), L('YRS', 'AÑOS', 'ANOS'), 'G', 'GS', 'W-L'].forEach((t, i) => c.fillText(t, X[i], top));
-  cols.forEach((cc, i) => c.fillText(cc[1].toUpperCase(), colX(i), top));
-  [['HS', L('High School', 'Preparatoria', 'Ensino Médio')], ['COL', L('College', 'Universidad', 'Universidade')], ['PRO', L('Pro', 'Profesional', 'Profissional')]].forEach(([lv, n], r) => {
-    const T = levelTotals(lv), y = top + 38 + r * 40;
-    c.fillStyle = r % 2 ? '#121a33' : '#16224a'; c.fillRect(30, y - 26, W - 60, 38);
-    c.fillStyle = '#ffd23f'; c.font = `12px ${f1}`; c.fillText(n, X[0], y);
-    c.fillStyle = '#fbfaf2'; c.font = `28px ${f2}`;
-    if (!T.rows.length) { c.fillStyle = '#5b6488'; c.fillText('—', X[1], y); return; }
-    [T.rows.length, T.gp, T.gs, `${T.w}-${T.l}`].forEach((v, i) => c.fillText(String(v), X[i + 1], y));
-    cols.forEach((cc, i) => c.fillText(statCell(T.tot, cc[0]), colX(i), y));
+  // trophy summary
+  c.fillStyle = '#ffd23f'; c.font = `11px ${f1}`; c.fillText(L('TROPHY CASE', 'VITRINA', 'ESTANTE'), 40, honTop - 12);
+  if (!stacks.length) { c.fillStyle = '#a7b1d4'; c.font = `26px ${f2}`; c.fillText(L('No trophies — but what a ride.', 'Sin trofeos — pero qué viaje.', 'Sem troféus — mas que jornada.'), 40, honTop + 24); }
+  stacks.forEach(([k, lbl, n], i) => {
+    const x = 40 + (i % 2) * 420, y = honTop + Math.floor(i / 2) * 40;
+    pixDraw(c, k, x, y, 2.5);
+    c.fillStyle = '#ffd23f'; c.font = `14px ${f1}`; c.fillText(`×${n}`, x + 40, y + 24);
+    c.fillStyle = '#fbfaf2'; let fs = 26; c.font = `${fs}px ${f2}`; const t = tx(lbl), room = 420 - 40 - 64 - 14;
+    while (fs > 18 && c.measureText(t).width > room) { fs--; c.font = `${fs}px ${f2}`; }
+    c.fillText(t, x + 40 + 58, y + 24);
   });
+  // level totals — columns sized to their widest value so nothing collides
+  const cols = (CARD_COLS[G.subPos] || STAT_COLS[G.subPos].slice(0, 5));
+  const lv = [['HS', L('High School', 'Preparatoria', 'Ensino Médio')], ['COL', L('College', 'Universidad', 'Universidade')], ['PRO', L('Pro', 'Profesional', 'Profissional')]].map(([k, n]) => [n, levelTotals(k)]);
+  const heads = [L('YRS', 'AÑOS', 'ANOS'), 'G', 'GS', 'W-L'].concat(cols.map((x) => x[1].toUpperCase()));
+  const cells = lv.map(([, T]) => (T.rows.length ? [String(T.rows.length), String(T.gp), String(T.gs), `${T.w}-${T.l}`].concat(cols.map((x) => statCell(T.tot, x[0]))) : null));
+  const labW = 190, avail = W - 60 - labW - 16; let fs = 28, widths;
+  const measure = () => { c.font = `${fs}px ${f2}`; const vw = heads.map((h, i) => Math.max(...cells.filter(Boolean).map((r) => c.measureText(r[i]).width), 0)); c.font = `10px ${f1}`; return vw.map((v, i) => Math.max(v, c.measureText(heads[i]).width) + 16); };
+  widths = measure(); while (fs > 18 && widths.reduce((a, b) => a + b, 0) > avail) { fs--; widths = measure(); }
+  const scale = Math.min(1, avail / widths.reduce((a, b) => a + b, 0)), rightX = []; let acc = 30 + labW;
+  widths.forEach((w) => { acc += w * scale; rightX.push(acc); });
+  c.fillStyle = '#0a0f20'; c.fillRect(30, tabTop - 26, W - 60, 3 * 42 + 34);
+  c.fillStyle = '#a7b1d4'; c.font = `10px ${f1}`; c.textAlign = 'left'; c.fillText(L('LEVEL', 'NIVEL', 'NÍVEL'), 40, tabTop);
+  c.textAlign = 'right'; heads.forEach((h, i) => c.fillText(h, rightX[i] - 6, tabTop));
+  lv.forEach(([n], r) => {
+    const y = tabTop + 38 + r * 42;
+    c.fillStyle = r % 2 ? '#121a33' : '#16224a'; c.fillRect(30, y - 28, W - 60, 40);
+    c.textAlign = 'left'; c.fillStyle = '#ffd23f'; c.font = `12px ${f1}`; c.fillText(n, 40, y);
+    c.font = `${fs}px ${f2}`;
+    if (!cells[r]) { c.fillStyle = '#5b6488'; c.fillText('—', 30 + labW, y); return; }
+    c.textAlign = 'right'; c.fillStyle = '#fbfaf2'; cells[r].forEach((v, i) => c.fillText(v, rightX[i] - 6, y));
+  });
+  c.textAlign = 'left';
   c.fillStyle = '#ffd23f'; c.font = `12px ${f1}`; c.fillText(`SEED ${G.seed}`, 40, H - 30);
   return cv.toDataURL('image/png');
 }
@@ -2893,6 +3016,7 @@ function autoSpend() {
     return ((ab[k] - G.ab[k]) + (carry[k] - (G.carry[k] || 0)) * 0.25 / lvCost(k, ab[k], G.pot[k])) * (w[k] + 0.02);
   };
   const choose = () => {
+    if (STRAT === 'random') { const ok = ATTR_KEYS.filter((k) => G.ab[k] < 80); return ok.length ? ok[mrand(ok.length)] : 'sk1'; }
     if (STRAT === 'skill') { const s = ['sk1', 'sk2'].filter((k) => G.ab[k] < 80); if (s.length) return s.sort((x, y) => G.ab[x] - G.ab[y])[0]; }
     const pts = G.phase === 'train' ? G.dice[G.diceIdx] : 1, ok = ATTR_KEYS.filter((k) => G.ab[k] < 80);
     if (!ok.length) return 'sk1';
@@ -3137,7 +3261,7 @@ window.GridironLife = {
   setBgm: (url) => BGM.set(url),
   setStrategy: (s) => { STRAT = s || null; },
   setEvStrategy: (m) => { EV_STRAT = m || null; },
-  _si: (st, n) => statIndex(st, n),
+  _si: (st, n) => statIndex(st, n), _q: () => prodQ(),
   meta: () => META,
   _draw: (cv, cfg) => drawAvatar(cv, cfg), _fun: () => funName(),
   state: () => G,
@@ -3149,7 +3273,7 @@ window.GridironLife = {
       switch (G.phase) {
         case 'loading': return true;
         case 'train': autoSpend(); ACT.confirmTrain(); return true;
-        case 'event': resolveEvent(EV_STRAT || ['bold', 'norm', 'safe'][n % 3]); return true;
+        case 'event': resolveEvent(EV_STRAT === 'random' ? ['bold', 'norm', 'safe'][mrand(3)] : EV_STRAT || ['bold', 'norm', 'safe'][n % 3]); return true;
         case 'season': if (G.S.ended) finishSeason(); else if (G.S.gi >= G.S.reg) playGame(true); else simSeason(); return true;
         case 'bonus': autoSpend(); ACT.confirmBonus(); return true;
         case 'off':
