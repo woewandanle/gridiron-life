@@ -317,6 +317,7 @@ canvas{image-rendering:pixelated;image-rendering:crisp-edges}
 
 /* ---------- Hall of Legends board (matches the panel/offer look) ---------- */
 .hs-list{padding:10px 10px 2px}
+.hs-sort{align-items:center}.hs-sort .d{font-size:15px;margin-right:2px}
 .hs-tabs{display:flex;flex-wrap:wrap;gap:5px;padding:10px 10px 0}
 .hs-tabs .pill{padding:7px 7px;font-size:8px}
 .hs-row{width:100%;display:grid;grid-template-columns:34px 44px 1fr auto;gap:8px;align-items:center;text-align:left;background:#0e1531;border:3px solid #000;box-shadow:0 3px 0 #000;padding:6px 8px;margin-bottom:8px}
@@ -331,6 +332,7 @@ canvas{image-rendering:pixelated;image-rendering:crisp-edges}
 .hs-right{display:flex;flex-direction:column;align-items:flex-end;gap:4px;min-width:96px}
 .hs-earn{font-family:var(--vt);font-size:17px;font-weight:normal;color:var(--green);white-space:nowrap;text-align:right}
 .hs-earn::before{content:'💰 ';font-size:13px}
+.hs-earn.hs-pts{color:var(--yellow)}.hs-earn.hs-pts::before{content:'🏆 '}
 .hs-sc{font-family:var(--px);font-size:12px;color:var(--yellow);text-shadow:2px 2px 0 #000;background:#000;border:2px solid #2a3561;padding:6px 5px}
 .hs-tip{font-size:16px;color:var(--dim);text-align:center;margin:0 0 8px}
 .hs-foot{font-family:var(--px);font-size:7px;color:var(--dim);text-align:center;border-top:3px solid #000;background:var(--navy3);padding:8px}
@@ -1000,7 +1002,9 @@ const ageBonus = () => (G && G.ageless) || 0; // shifts decline + retirement
 const ironBonus = () => (G && G.iron) || 0;    // routine: only pushes forced retirement back
 const decAge = (sub) => AGING[sub].dec + ageBonus();
 const peakEnd = () => AGING[G.subPos].peak[1] + ageBonus();
-const retireAge = () => decAge(G.subPos) + 6 + ironBonus();
+// How long a body lasts past the decline age (Ageless / Iron Routine push it back): speed positions (RB/WR/CB/S) wear out fastest.
+const SPEED_POS = ['RB', 'WR', 'CB', 'S'];
+const retireAge = () => decAge(G.subPos) + (SPEED_POS.includes(G.subPos) ? 3 : 4) + ironBonus();
 
 function marketAPY(o) {
   if (o == null) o = ovr();
@@ -1710,6 +1714,7 @@ const EXP_GAIN = { Regular: { Star_Player: 22, Starter: 12, Situational: 6, Benc
 function finishSeason() {
   const S = G.S, o = ovr(), sk = skill(), line = seasonLine(S.st), rec = `${S.w}-${S.l}`;
   mergeStats(G.career, S.st);
+  const mileBefore = G.stage === 'PRO' ? Object.fromEntries((MILESTONES[G.subPos] || []).map(([k]) => [k, mileVal(k)])) : null;
   if (G.stage === 'PRO') mergeStats(G.pc, S.st);
   const lastPost = S.games.length > S.reg ? S.games[S.games.length - 1] : null;
   const postTxt = S.champ ? B(`CHAMPIONS · ${POST[S.champ].en}`, `CAMPEONES · ${POST[S.champ].es}`, `CAMPEÕES · ${POST[S.champ].pt}`)
@@ -1752,7 +1757,8 @@ function finishSeason() {
   } else {
     let fa = { Star_Player: 35, Starter: 15, Situational: 7, Bench: 3 }[G.role] + Math.min(10, S.hl * 2);
     if (S.confChamp) honor('confpro', `${G.year} Conference Champion`, `${G.year} Campeón de Conferencia`, `${G.year} Campeão de Conferência`);
-    if (S.champ) { honor('league', `${G.year} League Champion`, `${G.year} Campeón de Liga`, `${G.year} Campeão da Liga`); fa += 30; }
+    if (S.champ) { const run = ringRun(G.year); honor('league', `${G.year} League Champion`, `${G.year} Campeón de Liga`, `${G.year} Campeão da Liga`); fa += 30 + run * 15; // repeat titles = dynasty fame
+      if (run) addFeed('gold', B(`Dynasty! ${run + 1} straight titles`, `¡Dinastía! ${run + 1} títulos seguidos`, `Dinastia! ${run + 1} títulos seguidos`), B(`Repeat champions are remembered forever: +${run * 15} extra Fame.`, `Los campeones que repiten se recuerdan para siempre: +${run * 15} de Fama extra.`, `Campeões repetidos são lembrados para sempre: +${run * 15} de Fama extra.`)); }
     V = awardsVoting(S, o);
     if (V.asg.sel) { honor('allstar', `${G.year} All-Star`, `${G.year} All-Star`); fa += 12; }
     if (V.al.team === 1) { honor('allpro', `${G.year} All-League First Team`, `${G.year} Primer Equipo de la Liga`, `${G.year} 1º Time da Liga`); fa += 25; }
@@ -1780,7 +1786,16 @@ function finishSeason() {
   }
   G.peakOvr = Math.max(G.peakOvr, o);
   const gp = S.games.filter((g) => !g.out).length;
+  const pendingMiles = [];
+  if (mileBefore) (MILESTONES[G.subPos] || []).forEach(([k, t1, t2, lbl]) => { [t1, t2].forEach((t) => { if (mileBefore[k] < t) pendingMiles.push([k, t, lbl]); }); });
   G.hist.push({ y: G.year, age: G.age, stage: G.stage, lbl: stageLabelObj(), team: curTeam().name, abbr: curTeam().abbr || abbrOf(curTeam().name), role: G.role, ovr: o, rec, w: S.w, l: S.l, gp, gs: STARTS(G.role) ? gp : 0, st: Object.assign({}, S.st), champ: !!S.champ, line, post: postTxt, vp: V ? V.perf : null });
+  pendingMiles.forEach(([k, t, lbl]) => {
+    if (mileVal(k) < t) return;
+    const n = t.toLocaleString('en-US');
+    honor('mile', `${G.year} ${n} ${lbl.en}`, `${G.year} ${n} ${lbl.es}`, `${G.year} ${n} ${lbl.pt}`); G.fame += 10;
+    addFeed('gold', B(`Milestone: ${n} ${lbl.en}`, `Hito: ${n} ${lbl.es}`, `Marco: ${n} ${lbl.pt}`), B('A number Hall of Fame voters remember. +10 Fame.', 'Una cifra que los votantes del Salón de la Fama recuerdan. +10 Fama.', 'Um número que os votantes do Hall da Fama lembram. +10 Fama.'));
+    toast(`★ ${n} ${tx(lbl).toUpperCase()}`, 'gold');
+  });
   addFeed(S.champ ? 'gold' : G.role === 'Bench' ? '' : 'good',
     B(`Season Final · ${rec} · ${ROLE[G.role].en}`, `Cierre de Temporada · ${rec} · ${ROLE[G.role].es}`, `Fim de Temporada · ${rec} · ${ROLE[G.role].pt}`),
     B(`${postTxt.en}. ${en.join('. ')}. Earned ${pts} bonus points.${moneyRow ? ' ' + moneyRow.en + '.' : ''}`, `${postTxt.es}. ${es.join('. ')}. Ganaste ${pts} puntos de bono.${moneyRow ? ' ' + moneyRow.es + '.' : ''}`, `${postTxt.pt}. ${pt.join('. ')}. Você ganhou ${pts} pontos bônus.${moneyRow ? ' ' + moneyRow.pt + '.' : ''}`),
@@ -1817,7 +1832,7 @@ function buildOffseason() {
     if (G.stageYr >= 3) q.push('draftDecision'); else q.push('portal', 'nil');
   } else if (G.stage === 'PRO') {
     const c = G.contract;
-    if (G.age + 1 >= retireAge()) q.push('retireForced');
+    if (G.age + 1 >= retireAge()) q.push(G.idleYears ? 'retireForced' : 'noCalls'); // the phone stops ringing first, then the end
     else {
       if (G.age >= 31 && (c.yearsLeft === 0 || G.age >= 34)) q.push('retireAsk');
       if (c.type === 'rookie' && c.round === 1 && c.yearsLeft === 1 && c.optionSal == null) q.push('option');
@@ -1833,6 +1848,9 @@ function releaseCheck() {
   if (c.type === 'rookie' && c.round === 1) return false;
   if (c.apy > mv * 1.7 && G.age >= 29) return chance(60);
   if (ovr() < 52 && c.apy > minSal(G.accrued, G.year) * 1.3) return chance(45);
+  // declining veterans get cut for younger, cheaper players — how most real careers end
+  const past = G.age - decAge(G.subPos);
+  if (past >= 0 && ovr() < 64 && c.apy > minSal(G.accrued, G.year) * 1.3) return chance(clamp(25 + past * 15, 25, 85));
   return false;
 }
 function nextOff() {
@@ -1918,6 +1936,12 @@ function buildStep(type) {
       }
       if (G.accrued === 3) return { type: 'rfa', tender: Math.round((STARTS(G.role) ? 5811 : 3520) * infl(y1)) };
       if (o >= 68 && G.age <= 30 && chance(65)) return { type: 'tag', val: tagValue() };
+      // Declining veterans: the team often lets them walk instead of paying for past glory.
+      const past = G.age - decAge(G.subPos);
+      if (past >= 1 && chance(clamp(15 + past * 18 + (62 - o) * 5 + (SPEED_POS.includes(G.subPos) ? 15 : 0), 0, 95))) {
+        G.offQ.unshift('fa'); G.faFrom = 'released';
+        return info(B('Team Moves On', 'El Equipo Sigue Adelante', 'O Time Seguiu em Frente'), B(`${proT().name} won't re-sign you — they're going younger. You hit the open market at ${G.age + 1}.`, `${proT().name} no te renovará: apuestan por jugadores más jóvenes. Sales al mercado a los ${G.age + 1}.`, `${proT().name} não vai renovar: o time vai apostar em jogadores mais jovens. Você vai ao mercado aos ${G.age + 1}.`), 'bad');
+      }
       const N = makeNeg('resign');
       N.msg = B('"Before the market opens, we have an exclusive window with you. Here\'s our offer."', '"Antes de que abra el mercado tenemos una ventana exclusiva contigo. Esta es nuestra oferta."', '"Antes de o mercado abrir, temos uma janela exclusiva com você. Esta é a nossa oferta."');
       return N;
@@ -1947,6 +1971,7 @@ function buildStep(type) {
       if (!(losing || snaps) || !chance(45)) return null;
       return { type: 'tradeAsk', why: losing ? 'losing' : 'snaps' };
     }
+    case 'noCalls': return info(B('The Phone Stops Ringing', 'El Teléfono Deja de Sonar', 'O Telefone Para de Tocar'), B(`At ${G.age + 1}, no team offers you a contract. You'll sit out the season as a free agent and hope for one more call.`, `A los ${G.age + 1} años, ningún equipo te ofrece contrato. Pasarás la temporada como agente libre esperando una última llamada.`, `Aos ${G.age + 1} anos, nenhum time oferece contrato. Você vai passar a temporada como agente livre esperando uma última ligação.`), 'bad', 'idle');
     case 'retireAsk': return { type };
     case 'retireForced': return info(B('End of the Road', 'Fin del Camino', 'Fim da Linha'), B(`At ${G.age + 1}, your body says it's time. Your career is over.`, `A los ${G.age + 1} años, tu cuerpo dice que es hora. Tu carrera terminó.`, `Aos ${G.age + 1} anos, seu corpo diz que chegou a hora. Sua carreira acabou.`), 'gold', 'retire');
   }
@@ -1970,6 +1995,7 @@ const TAG_2026 = { QB: 43895, RB: 14293, WR: 27298, TE: 15045, OT: 25773, OL: 25
 function tagValue() { const base = Math.round(TAG_2026[G.subPos] * infl(G.year + 1)); return G.tagCount > 0 ? Math.max(base, Math.round(G.lastTag * 1.2)) : base; }
 
 function signPro(teamId, type, years, apy, gtd, bonus, extra) {
+  G.idleYears = 0;
   const total = Math.round(apy * years);
   G.proId = teamId;
   G.contract = Object.assign({ teamId, type, years, yearsLeft: years, apy: Math.round(apy), total, gtd: Math.round(gtd), bonus: Math.round(bonus), paid: Math.round(bonus), round: null, optionSal: null, signed: G.year + 1 }, extra || {});
@@ -2029,7 +2055,7 @@ function genFAOffers(n, exclude) {
   for (const t of shuffle(PRO_TEAMS)) {
     if (out.length >= n) break;
     if ((exclude || []).includes(t.id)) continue;
-    const ts = tstate(t.id), interest = clamp((o - 50) * 4 + G.fame / 12 - Math.max(0, G.age - 29) * 7 + (ts.r < 60 ? 8 : 0), 4, 92);
+    const ts = tstate(t.id), interest = clamp((o - 50) * 4 + Math.min(18, G.fame / 40) - Math.max(0, G.age - (decAge(G.subPos) - 1)) * (SPEED_POS.includes(G.subPos) ? 18 : 13) + (ts.r < 60 ? 8 : 0), 4, 92);
     if (!chance(interest)) continue;
     let apy = mv * rf(0.82, 1.04);
     if (apy > ts.cap) { if (ts.cap < mv * 0.6) continue; apy = ts.cap * 0.95; }
@@ -2039,10 +2065,21 @@ function genFAOffers(n, exclude) {
   }
   return out;
 }
+// An unsigned year: no team, no stats — the body keeps aging. Next spring the market opens one more time;
+// a second year with no offers ends the career (most real careers end like this, not with a farewell tour).
+function idleYear() {
+  G.idleYears = (G.idleYears || 0) + 1;
+  G.contract = { type: 'none', years: 0, yearsLeft: 0, apy: 0, total: 0, bonus: 0, gtd: 0, paid: 0, teamId: null };
+  G.year++; G.age++;
+  const ch = yearlyGrowth();
+  addFeed('bad', B('Unsigned', 'Sin Equipo', 'Sem Time'), B(`A full season without a team. You trained alone and watched from home.${ch.length ? ' ' + ch.join(' · ') : ''}`, `Una temporada entera sin equipo. Entrenaste solo y miraste desde casa.${ch.length ? ' ' + ch.join(' · ') : ''}`, `Uma temporada inteira sem time. Você treinou sozinho e assistiu de casa.${ch.length ? ' ' + ch.join(' · ') : ''}`));
+  G.offQ = G.age + 1 >= retireAge() ? ['retireForced'] : ['fa']; G.faFrom = 'idle';
+  nextOff();
+}
 function makeFA() {
   const own = G.faFrom === 'own' && G.faOwn ? Object.assign({ id: G.proId, own: true }, G.faOwn) : null;
   const ex = G.faFrom === 'released' || G.faFrom === 'own' ? [G.proId] : [];
-  const n = clamp(Math.round((ovr() - 48) / 4), 1, 5);
+  const n = clamp(Math.round((ovr() - 48) / 4) - (G.faFrom === 'idle' ? 2 : 0), 0, 5); // a year out of the league scares teams off
   const offers = genFAOffers(n, ex);
   if (!offers.length && ovr() >= 56) offers.push(...genFAOffers(1, ex.concat(PRO_TEAMS.filter((t) => tstate(t.id).cap < marketAPY() * 0.6).map((t) => t.id))));
   if (own) offers.unshift(own);
@@ -2095,7 +2132,7 @@ function faWait() {
     const add = genFAOffers(1, M.offers.map((x) => x.id));
     if (add.length) { M.offers.push(add[0]); en.push(`${proT(add[0].id).abbr} entered the bidding`); es.push(`${proT(add[0].id).abbr} entró a la puja`); pt.push(`${proT(add[0].id).abbr} entrou na disputa`); }
   }
-  if (M.day >= 4 && !M.offers.length && ovr() >= 52) {
+  if (M.day >= 4 && !M.offers.length && ovr() >= 52 && G.age < decAge(G.subPos) + 2) {
     const t = pick(PRO_TEAMS);
     M.offers.push({ id: t.id, apy: minSal(G.accrued, G.year + 1), years: 1, gtd: 0, max: minSal(G.accrued, G.year + 1) });
     en.push('A late veteran-minimum offer arrived'); es.push('Llegó una oferta tardía al mínimo de veterano'); pt.push('Chegou uma oferta tardia de mínimo de veterano');
@@ -2112,14 +2149,14 @@ function statUnits() {
   if (sp === 'QB') return (s('pyd') + s('ryd')) / 6000 + (s('ptd') + s('rtd')) / 43;
   if (sp === 'RB') return s('ryd') / 1180 + s('rtd') / 10.7; // realistic ~1,100 yds / 8 TD a season → same career weight as before
   if (sp === 'WR' || sp === 'TE') return s('recyd') / 1600 + s('rectd') / 15;
-  if (sp === 'CB' || sp === 'S') return s('int') / 6 + s('pd') / 30;
+  if (sp === 'CB' || sp === 'S') return s('int') / 4 + s('pd') / 16 + (sp === 'S' ? s('tkl') / 180 : 0); // matches realistic PD (~13 CB / ~8 S a year)
   if (sp === 'LB') return s('tkl') / 180 + s('sck') / 8; // off-ball LBs get ~2-3 sacks a year
   if (sp === 'OL' || sp === 'OT') return s('pan') / (sp === 'OT' ? 90 : 113); // guards/centers log more pancakes
   if (sp === 'K') return s('fgm') / 45;
   if (sp === 'DT') return s('sck') / 8 + s('tfl') / 14; // interior DL: fewer sacks/TFL than edge, same career weight
   return s('sck') / 12 + s('tfl') / 20; // realistic TFL (~10-15/yr for a starter) → same weight as before
 }
-const HOF_BAR = 80, HOF_FIRST = 120; // eased for a K-12 audience: ~1 in 4 casual careers, ~half of strong ones
+const HOF_BAR = 90, HOF_FIRST = 150; // rings/dynasties, longevity and milestones counted, careers end at real-world ages: ~1 in 5 casual careers, ~half of strong ones
 /* Hall of Legends = an arcade-style high-score board saved on this device (IndexedDB).
    Each entry is a compact snapshot (~1–2 KB): name, face, inducted levels, career totals, award counts and the
    real-world timestamp. Only the top HALL_MAX entries are kept, so it stays under ~100 KB even after years of use. */
@@ -2148,15 +2185,17 @@ const ORD = (n) => (lang === 'es' || lang === 'pt' ? `${n}º` : n + (n % 100 >= 
 const posGroupOf = (sub) => Object.keys(POS_GROUPS).find((k) => POS_GROUPS[k].subs.includes(sub)) || 'QB';
 const HALL_TABS = [['ALL', B('All', 'Todos', 'Todos')], ['QB', B('QB', 'QB', 'QB')], ['RB', B('RB', 'RB', 'RB')], ['SP', B('WR/CB/S', 'WR/CB/S', 'WR/CB/S')], ['BS', B('TE/LB/DE', 'TE/LB/DE', 'TE/LB/DE')], ['LM', B('Line', 'Línea', 'Linha')], ['K', B('K', 'K', 'K')]];
 let hallTab = 'ALL';
-const hallList = () => (META.hall || []).filter((x) => x.ts && (hallTab === 'ALL' || posGroupOf(x.pos) === hallTab));
+let hallSort = 'score'; // 'score' | 'earn' (career earnings, high → low)
+const hallList = () => (META.hall || []).filter((x) => x.ts && (hallTab === 'ALL' || posGroupOf(x.pos) === hallTab)).sort((a, b) => (hallSort === 'earn' ? (b.earn || 0) - (a.earn || 0) : b.score - a.score));
 function hallBoard() {
   const list = hallList(), total = (META.hall || []).filter((x) => x.ts).length;
-  const tabs = total ? `<div class="hs-tabs">${HALL_TABS.map(([k, n]) => `<button class="pill ${hallTab === k ? 'on' : ''}" data-act="hallTab" data-v="${k}">${tx(n)}</button>`).join('')}</div>` : '';
+  const tabs = total ? `<div class="hs-tabs">${HALL_TABS.map(([k, n]) => `<button class="pill ${hallTab === k ? 'on' : ''}" data-act="hallTab" data-v="${k}">${tx(n)}</button>`).join('')}</div>
+    <div class="hs-tabs hs-sort"><span class="d">${L('Sort', 'Ordenar', 'Ordenar')}:</span><button class="pill ${hallSort === 'score' ? 'on' : ''}" data-act="hallSort" data-v="score">🏆 ${L('Score', 'Puntaje', 'Pontuação')}</button><button class="pill ${hallSort === 'earn' ? 'on' : ''}" data-act="hallSort" data-v="earn">$ ${L('Earnings', 'Ganancias', 'Ganhos')}</button></div>` : '';
   const rows = list.slice(0, 10).map((e, i) => `<button class="hs-row" data-act="hallCard" data-i="${i}">
       <span class="hs-rk m${Math.min(i + 1, 4)}">${i + 1}</span>
       <canvas data-hrow="${i}" width="48" height="48"></canvas>
       <span class="hs-nm">${esc(e.name)}<em>${e.pos} · ${e.rookie ? `<i class="hs-rookie">${L('FIRST CAREER', 'PRIMERA CARRERA', 'PRIMEIRA CARREIRA')}</i>` : ''}${[e.pro ? (e.first ? L('PRO HOF 1st ballot', 'HOF PRO 1.ª boleta', 'HOF PRO 1ª votação') : L('PRO HOF', 'HOF PRO', 'HOF PRO')) : '', e.col ? L('COLLEGE HOF', 'HOF UNIV.', 'HOF UNIV.') : ''].filter(Boolean).join(' + ')}</em><em>${fmtTs(e.ts)}</em></span>
-      <span class="hs-right"><span class="hs-sc">${String(e.score).padStart(6, '0')}</span><b class="hs-earn" title="${L('Career earnings', 'Ganancias de carrera', 'Ganhos na carreira')}">${money(e.earn || 0)}</b></span></button>`).join('');
+      <span class="hs-right">${hallSort === 'earn' ? `<span class="hs-sc">${money(e.earn || 0)}</span><b class="hs-earn hs-pts">${String(e.score).padStart(6, '0')}</b>` : `<span class="hs-sc">${String(e.score).padStart(6, '0')}</span><b class="hs-earn" title="${L('Career earnings', 'Ganancias de carrera', 'Ganhos na carreira')}">${money(e.earn || 0)}</b>`}</span></button>`).join('');
   return `<div class="panel hall"><div class="ph yh"><span>🏆 ${L('Hall of Legends', 'Salón de Leyendas', 'Hall das Lendas')}</span><span>${L('this device', 'este equipo', 'este aparelho')}</span></div>
     ${tabs}${list.length ? `<div class="hs-list">${rows}</div><p class="hs-tip">${list.some((x) => x.rookie) ? L('Your first career holds a spot until you make the Hall of Fame. ', 'Tu primera carrera guarda un lugar hasta que entres al Salón de la Fama. ', 'Sua primeira carreira guarda um lugar até você entrar no Hall da Fama. ') : ''}${L('Tap a legend to open his card', 'Toca una leyenda para ver su tarjeta', 'Toque numa lenda para ver o card')}${list.length > 10 ? ` · ${list.length} ${L('saved', 'guardadas', 'salvas')}` : ''}</p>`
       : total ? `<div class="pb" style="text-align:center"><p class="d">${L('No legends at this position yet.', 'Aún no hay leyendas en esta posición.', 'Ainda não há lendas nesta posição.')}</p></div>` : `<div class="pb" style="text-align:center"><p class="px y blink" style="font-size:11px;margin:10px 0">${L('NO LEGENDS YET', 'AÚN NO HAY LEYENDAS', 'AINDA NÃO HÁ LENDAS')}</p><p class="d">${L('Reach the Pro or College Hall of Fame to put your name on this board.', 'Entra al Salón de la Fama Pro o Universitario para poner tu nombre en esta tabla.', 'Entre no Hall da Fama Profissional ou Universitário para colocar seu nome neste placar.')}</p></div>`}
@@ -2178,10 +2217,40 @@ function hallCardHTML(e, rank) {
     <button class="btn gb full mt" data-act="closeModal">OK</button>
     <button class="btn ob full mt" data-act="playSeed" data-v="${esc(e.seed)}">🎬 ${L('Watch ad: start a new career with this seed', 'Ver anuncio: nueva carrera con esta semilla', 'Ver anúncio: nova carreira com esta semente')}<small>${L('same starting ratings as this legend', 'mismos atributos iniciales que esta leyenda', 'mesmos atributos iniciais desta lenda')}</small></button></div>`;
 }
+// Titles: each ring counts like an All-League 1st Team (14, still below MVP's 20); repeats build a dynasty bonus —
+// +4 for the 2nd straight title, +8 for the 3rd straight, and so on.
+// Career milestones (pro career). Thresholds mirror real NFL "clubs" (regular season, as of 2025):
+// 10,000 rush yds = 32 players, 15,000 ≈ 4 · 100 rush TD ≈ 13 also with 10k yds · 10,000 rec yds = 57, 15,000 = 6 ·
+// 100 rec TD = 12 · 50,000 pass yds = 12, 70,000 = 5 · 500 pass TD = 5 · 100 sacks = 46, 150 = 5 ·
+// 40 INT = 84, 60 = 11 · 400 FG = 15, 500 = 3 (record 599) · 60,000 pass yds = 10 (record 89,214).
+// Game careers run long and include playoff games, so QB / K / OL bars sit a notch above the real clubs; interior DL
+// (DT/DL) bars are lower than edge rushers', as in real life. TE / LB / OL lines are estimates (no single official list).
+// Tier 1 ("the club") and tier 2 (all-time elite) each add HOF points (max 16 per position).
+const MILESTONES = {
+  QB: [['pyd', 60000, 80000, B('Passing Yards', 'Yardas por Pase', 'Jardas Passando')], ['ptd', 450, 600, B('Passing TDs', 'TD de Pase', 'TD Passando')]],
+  RB: [['ryd', 10000, 15000, B('Rushing Yards', 'Yardas por Tierra', 'Jardas Corridas')], ['rtd', 100, 150, B('Rushing TDs', 'TD por Tierra', 'TD Corridos')]],
+  WR: [['recyd', 10000, 15000, B('Receiving Yards', 'Yardas por Recepción', 'Jardas Recebidas')], ['rectd', 100, 150, B('Receiving TDs', 'TD de Recepción', 'TD Recebidos')]],
+  TE: [['recyd', 7500, 10000, B('Receiving Yards', 'Yardas por Recepción', 'Jardas Recebidas')], ['rectd', 60, 100, B('Receiving TDs', 'TD de Recepción', 'TD Recebidos')]],
+  DE: [['sck', 100, 150, B('Sacks', 'Capturas', 'Sacks')]], DL: [['sck', 80, 120, B('Sacks', 'Capturas', 'Sacks')]], DT: [['sck', 70, 100, B('Sacks', 'Capturas', 'Sacks')]],
+  LB: [['tkl', 1500, 2000, B('Tackles', 'Tacleadas', 'Tackles')], ['sck', 100, 150, B('Sacks', 'Capturas', 'Sacks')]],
+  CB: [['int', 40, 60, B('Interceptions', 'Intercepciones', 'Interceptações')]], S: [['int', 40, 60, B('Interceptions', 'Intercepciones', 'Interceptações')]],
+  OL: [['gs', 250, 300, B('Career Starts', 'Partidos como Titular', 'Jogos como Titular')]], OT: [['gs', 250, 300, B('Career Starts', 'Partidos como Titular', 'Jogos como Titular')]],
+  K: [['fgm', 500, 650, B('Field Goals', 'Goles de Campo', 'Field Goals')]]
+};
+const proStarts = () => G.hist.filter((h) => h.stage === 'PRO').reduce((n, h) => n + (h.gs || 0), 0);
+const mileVal = (k) => (k === 'gs' ? proStarts() : G.pc[k] || 0);
+// Every position can earn at most 16: one-stat positions get 8 + 8, two-stat positions 4 + 4 per stat.
+function milestonePts() { const ms = MILESTONES[G.subPos] || [], per = ms.length > 1 ? 4 : 8; return ms.reduce((sc, [k, t1, t2]) => sc + (mileVal(k) >= t1 ? per : 0) + (mileVal(k) >= t2 ? per : 0), 0); }
+const ringRun = (y) => { let n = 0; while (G.honors.some((h) => h.k === 'league' && h.y === y - 1 - n)) n++; return n; }; // titles in a row before year y
+function ringScore() {
+  const ys = G.honors.filter((h) => h.k === 'league').map((h) => h.y).sort((a, b) => a - b);
+  let sc = 0, run = 0; ys.forEach((y, i) => { run = i && y === ys[i - 1] + 1 ? run + 1 : 0; sc += 14 + run * 4; });
+  return sc;
+}
 function hofCalc() {
   const proSeasons = G.hist.filter((h) => h.stage === 'PRO'), starts = proSeasons.reduce((s, h) => s + (STARTS(h.role) ? 1 : h.role === 'Situational' ? 0.5 : 0), 0);
   const colScore = hcount('allam') * 25 + hcount('helmet') * 45 + hcount('natcol') * 20 + hcount('allconf') * 6 + hcount('allconf2') * 3 + (G.colFame || 0) * 0.15;
-  const proScore = hcount('allpro') * 14 + hcount('allpro2') * 6 + hcount('allstar') * 5 + hcount('mvp') * 20 + hcount('league') * 6 + starts * 1.5 + Math.max(0, G.peakOvr - 64) * 3 + clamp(statUnits() * 3, 0, 30) + clamp((G.pc.gwd || 0) * 0.5 + (G.pc.gwfg || 0) * 0.8, 0, 15); // clutch legacy
+  const proScore = hcount('allpro') * 14 + hcount('allpro2') * 6 + hcount('allstar') * 5 + hcount('mvp') * 20 + ringScore() + 30 * (1 - Math.exp(-starts / 12)) + Math.max(0, G.peakOvr - 64) * 3 + 45 * (1 - Math.exp(-statUnits() / 15)) + milestonePts() + clamp((G.pc.gwd || 0) * 0.5 + (G.pc.gwfg || 0) * 0.8, 0, 15); // clutch legacy
   return { col: colScore >= 60, pro: proSeasons.length >= 5 && proScore >= HOF_BAR, first: proScore >= HOF_FIRST, score: Math.round(proScore), colScore: Math.round(colScore), seasons: proSeasons.length };
 }
 function retire() {
@@ -2636,6 +2705,8 @@ function viewFA() {
         <table class="kv">${offerRow(L('Per year', 'Por año', 'Por ano'), `<b class="y">${money(of.apy)}</b>`)}${offerRow(L('Years / Total', 'Años / Total', 'Anos / Total'), `${of.years} / ${money(of.apy * of.years)}`)}${offerRow(L('Guaranteed', 'Garantizado', 'Garantido'), money(of.apy * of.years * of.gtd))}</table>
         <div class="row mt"><button class="btn yb" data-act="faAccept" data-i="${i}">${L('Sign', 'Firmar', 'Assinar')}</button>${M.offers.length > 1 ? `<button class="btn" data-act="faLev" data-i="${i}" ${M.lev ? 'disabled' : ''}>${L('Use as leverage', 'Usar de palanca', 'Usar como trunfo')}</button>` : ''}</div></div>`; }).join('')
       : `<p class="r mt">${L('No offers on the table.', 'No hay ofertas.', 'Sem ofertas.')}</p>`}
+    ${!M.offers.length && M.day >= 5 ? (G.idleYears ? `<p class="r mt">${L('A second year without a single call. Nobody is coming — it is time.', 'Un segundo año sin una sola llamada. Nadie va a venir: es hora.', 'Um segundo ano sem uma única ligação. Ninguém vai ligar: chegou a hora.')}</p>`
+      : `<button class="btn full mt" data-act="faIdle">⏳ ${L('Stay unsigned — wait out the season', 'Seguir sin equipo — esperar la temporada', 'Ficar sem time — esperar a temporada')}<small>${L('train on your own; maybe a team calls next year', 'entrenas por tu cuenta; quizá alguien llame el próximo año', 'treina sozinho; talvez um time ligue no ano que vem')}</small></button>`) : ''}
     <div class="row mt">${M.day < 4 || M.offers.length === 0 && M.day < 5 ? `<button class="btn" data-act="faWait">${L('Wait a day', 'Esperar un día', 'Esperar um dia')}</button>` : ''}<button class="btn rb" data-act="retire">${L('Retire', 'Retirarme', 'Me aposentar')}</button></div>
     <p class="hint">${L('Leverage once per day: other teams may raise to beat your best offer — or walk away. Waiting can bring new bidders, but teams also sign other players.', 'Una palanca por día: otros equipos pueden subir — o retirarse. Esperar puede traer nuevos postores, pero también firman a otros.', 'Um trunfo por dia: outros times podem subir — ou desistir. Esperar pode trazer novos interessados, mas os times também assinam com outros.')}</p>
   </div></div>`;
@@ -2967,7 +3038,7 @@ const PIX = {
 };
 const SILVER = { Y: 'S', O: 's' }, BRONZE = { Y: 'C', O: 'c' };
 // [shape, recolor]
-const HONOR_ICON = { league: ['ring'], mvp: ['crown'], allpro: ['medal'], allpro2: ['medal', SILVER], allstar: ['star'], helmet: ['helmet'], allam: ['shield'],
+const HONOR_ICON = { mile: ['star', SILVER], league: ['ring'], mvp: ['crown'], allpro: ['medal'], allpro2: ['medal', SILVER], allstar: ['star'], helmet: ['helmet'], allam: ['shield'],
   natcol: ['cup'], natprep: ['cup'], state: ['cup'], confpro: ['cup', SILVER], confcol: ['cup', SILVER], allconf: ['medal'], allconf2: ['medal', SILVER], allstate: ['medal', BRONZE] };
 function pixGrid(k) { const [shape, map] = HONOR_ICON[k] || ['star']; return PIX[shape].map((row) => [...row].map((ch) => (map && map[ch]) || ch)); }
 function pixSVG(k, px) {
@@ -2980,7 +3051,7 @@ const HONOR_ORDER = [
   ['allpro2', B('All-League 2nd Team', 'Segundo Equipo de la Liga', '2º Time da Liga'), '🥈'], ['confpro', B('Conference Champion', 'Campeón de Conferencia', 'Campeão de Conferência'), '🏆'], ['allstar', B('All-Star', 'All-Star', 'All-Star'), '⭐'], ['helmet', B('Golden Helmet (College Player of the Year)', 'Casco de Oro (Jugador Universitario del Año)', 'Capacete de Ouro (Jogador Universitário do Ano)'), '🏈'],
   ['natcol', B('College National Champion', 'Campeón Nacional Universitario', 'Campeão Nacional Universitário'), '🏆'], ['confcol', B('College Conference Champion', 'Campeón de Conferencia Universitario', 'Campeão de Conferência Universitário'), '🏆'], ['allam', B('All-American', 'All-American', 'All-American'), '🎖'], ['allconf', B('All-Conference 1st Team', 'Primer Equipo de Conferencia', '1º Time da Conferência'), '🏅'],
   ['allconf2', B('All-Conference 2nd Team', 'Segundo Equipo de Conferencia', '2º Time da Conferência'), '🏅'], ['natprep', B('National Prep Champion', 'Campeón Nacional Prep', 'Campeão Nacional Prep'), '🏆'], ['state', B('State Champion', 'Campeón Estatal', 'Campeão Estadual'), '🏆'],
-  ['allstate', B('All-State', 'Selección Estatal', 'Seleção Estadual'), '🏅']
+  ['allstate', B('All-State', 'Selección Estatal', 'Seleção Estadual'), '🏅'], ['mile', B('Career Milestone', 'Hito de Carrera', 'Marco da Carreira'), '⭐']
 ];
 // Ring chase: a veteran (decline age − 1 or older) who has never won a league title gets +3 team strength in playoff games
 // ("win one for the old man"), and free agency adds a contender willing to sign him at a discount. Gone after the first ring.
@@ -3165,6 +3236,7 @@ const ACT = {
     CR.seed = seed; CR.seedOk = true; CR_OPEN.seed = true; G = null; savedCareer = savedCareer || null; showScreen('create'); toast(L('SEED LOADED', 'SEMILLA CARGADA', 'SEMENTE CARREGADA'), 'good'); }); },
   retireYes: () => { closeModal(); tab = 'play'; retire(); },
   hallTab: (d) => { hallTab = d.v; renderTitle(); },
+  hallSort: (d) => { hallSort = d.v; renderTitle(); },
   hallCard: (d) => { const i = +d.i, e = hallList()[i]; if (!e) return; openModal(hallCardHTML(e, i + 1)); const cv = document.querySelector('#mbox canvas[data-hav]'); if (cv) drawAvatar(cv, Object.assign({}, e.av, { num: e.num })); },
   // ---- in-game ----
   tab: (d) => { tab = d.v; renderTabs(); renderView(); window.scrollTo(0, 0); },
@@ -3197,6 +3269,7 @@ const ACT = {
     const O = G.off;
     if (O.type === 'draft') { G.draft = { pick: O.pick, team: O.team }; G.offQ.unshift('agent', 'rookie'); }
     if (O.type === 'info' && O.onOk === 'retire') { retire(); return; }
+    if (O.type === 'info' && O.onOk === 'idle') { G.offQ = []; idleYear(); return; }
     nextOff();
   },
   transfer: (d) => {
@@ -3284,6 +3357,7 @@ const ACT = {
   },
   tipAd: () => Ads.rewarded().then((ok) => { if (ok && G.off && G.off.type === 'neg') G.off.tip = true; save(); renderAll(); Ads.gameplayStart(); }),
   faAccept: (d) => faAccept(+d.i),
+  faIdle: () => idleYear(),
   faLev: (d) => faLeverage(+d.i),
   faWait: () => faWait(),
   retire: () => retire(),
@@ -3350,6 +3424,7 @@ window.GridironLife = {
   setStrategy: (s) => { STRAT = s || null; },
   setEvStrategy: (m) => { EV_STRAT = m || null; },
   _si: (st, n) => statIndex(st, n), _q: () => prodQ(),
+  _hof: () => ({ units: statUnits(), mile: milestonePts(), ring: ringScore(), peak: G.peakOvr, aw: hcount('allpro') * 14 + hcount('allpro2') * 6 + hcount('allstar') * 5 + hcount('mvp') * 20, seasons: G.hist.filter((h) => h.stage === 'PRO').length }),
   meta: () => META,
   _draw: (cv, cfg) => drawAvatar(cv, cfg), _fun: () => funName(),
   state: () => G,
@@ -3382,7 +3457,7 @@ window.GridironLife = {
             case 'tag': ACT.holdout(); break;
             case 'tradeAsk': if (n % 2) ACT.tradeReq(); else ACT.ok(); break;
             case 'neg': if (n % 3 === 2 && O.kind === 'resign') ACT.testFA(); else if (n % 2) { ACT.askAdj({ v: 2 }); ACT.submitAsk(); } else ACT.acceptOffer(); break;
-            case 'fa': if (O.offers.length && O.day >= 2) ACT.faAccept({ i: 0 }); else if (O.offers.length > 1 && !O.lev) ACT.faLev({ i: 0 }); else if (O.day < 5) ACT.faWait(); else ACT.retire(); break;
+            case 'fa': if (O.offers.length && O.day >= 2) ACT.faAccept({ i: 0 }); else if (O.offers.length > 1 && !O.lev) ACT.faLev({ i: 0 }); else if (O.day < 5) ACT.faWait(); else if (!G.idleYears) ACT.faIdle(); else ACT.retire(); break;
             case 'retireAsk': if (ovr() < 58) ACT.retire(); else ACT.continueCareer(); break;
             default: return false;
           }
