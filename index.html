@@ -1721,8 +1721,9 @@ function awardsVoting(S, o) {
     // (Archie Griffin, 1974-75, is the only one), so a second one is a legend-level long shot.
     // 11+ wins = a near-unbeaten contender that also went deep. The first one is open to every position that tops the nation
     // on a contender; after that the voters' real position bias takes over (QB first, then RB/WR, then everyone else).
-    const rep = pos === 'QB' ? 60 : ['RB', 'WR'].includes(pos) ? 35 : ['OL', 'OT', 'K'].includes(pos) ? 4 : 12;
-    V.poy = V.aa.sel && !V.aa.fcs && ma === 1 && S.w >= 11 && chance(hcount('helmet') ? rep : 75);
+    // Kickers sit outside the "every position gets one" rule: no kicker has ever been a Heisman finalist.
+    const rep = pos === 'QB' ? 60 : ['RB', 'WR'].includes(pos) ? 35 : pos === 'K' ? 1 : ['OL', 'OT'].includes(pos) ? 4 : 12;
+    V.poy = V.aa.sel && !V.aa.fcs && ma === 1 && S.w >= 11 && chance(hcount('helmet') ? rep : pos === 'K' ? 5 : 75);
   }
   return V;
 }
