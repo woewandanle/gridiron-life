@@ -1717,9 +1717,12 @@ function awardsVoting(S, o) {
     V.conf = { slots: s, rank: mc, team: mc <= s ? 1 : mc <= 2 * s ? 2 : 0, name: col().conf };
     const ma = rankOf(pc + rf(-0.8, 0.8), t === 'FCS' ? 50.8 : 56.8, t === 'FCS' ? 128 : 134);
     V.aa = { slots: s, rank: ma, sel: ma <= s, fcs: t === 'FCS' };
-    // Heisman-style vote: QBs win most years (~80% since 2000), RBs/WRs need a historic season; voters almost never crown a repeat
-    // winner (Archie Griffin, 1974-75, is the only one), so a past winner's odds drop to a fifth.
-    V.poy = V.aa.sel && !V.aa.fcs && ma === 1 && S.w >= 10 && ['QB', 'RB', 'WR'].includes(pos) && chance((pos === 'QB' ? 50 : pos === 'RB' ? 15 : 10) * (hcount('helmet') ? 0.2 : 1));
+    // Heisman-style vote: the first one is there for the taking; voters almost never crown a repeat winner
+    // (Archie Griffin, 1974-75, is the only one), so a second one is a legend-level long shot.
+    // 11+ wins = a near-unbeaten contender that also went deep. The first one is open to every position that tops the nation
+    // on a contender; after that the voters' real position bias takes over (QB first, then RB/WR, then everyone else).
+    const rep = pos === 'QB' ? 60 : ['RB', 'WR'].includes(pos) ? 35 : ['OL', 'OT', 'K'].includes(pos) ? 4 : 12;
+    V.poy = V.aa.sel && !V.aa.fcs && ma === 1 && S.w >= 11 && chance(hcount('helmet') ? rep : 75);
   }
   return V;
 }
@@ -2579,7 +2582,7 @@ function votesPanel(V) {
       `<div class="vb"><span>${pos} ${L('in conf.', 'en conf.', 'na conf.')}${rk(c.rank, c.team > 0)}</span><span>${L('spots/team', 'lugares/equipo', 'vagas/time')}<b>${c.slots}</b></span></div>`, '');
     html += box(L(`${a.fcs ? 'FCS ' : ''}All-American`, `All-American${a.fcs ? ' FCS' : ''}`, `All-American${a.fcs ? ' FCS' : ''}`), tag(a.sel, L('SELECTED', 'ELEGIDO', 'ELEITO'), L('NOT SELECTED', 'NO ELEGIDO', 'NÃO ELEITO')),
       `<div class="vb"><span>${pos} ${L('nationally', 'nacional', 'nacional')}${rk(a.rank, a.sel)}</span><span>${L('spots', 'lugares', 'vagas')}<b>${a.slots}</b></span></div>`,
-      V.poy ? L('🏆 Golden Helmet winner!', '🏆 ¡Ganador del Casco de Oro!', '🏆 Vencedor do Capacete de Ouro!') : L('Golden Helmet: #1 nationally + 10 wins needed (QB/RB/WR).', 'Casco de Oro: #1 nacional + 10 victorias (QB/RB/WR).', 'Capacete de Ouro: #1 nacional + 10 vitórias (QB/RB/WR).'));
+      V.poy ? L('🏆 Golden Helmet winner!', '🏆 ¡Ganador del Casco de Oro!', '🏆 Vencedor do Capacete de Ouro!') : L('Golden Helmet: #1 nationally + 11 wins needed.', 'Casco de Oro: #1 nacional + 11 victorias.', 'Capacete de Ouro: #1 nacional + 11 vitórias.'));
   }
   return `<div class="panel"><div class="ph bh"><span>${L('Awards Voting', 'Votación de Premios', 'Votação de Prêmios')}</span><span>${L('Perf.', 'Rend.', 'Desemp.')} ${V.perf}</span></div><div class="pb">${html}
     <p class="hint" style="margin-bottom:0">${L('Performance = OVR + this season\'s production − games missed, ranked against the best rivals at your position. Team record is not a voting rule, but winners get a small fan-vote bump, and MVPs come from winning teams.', 'Rendimiento = OVR + producción de la temporada − juegos perdidos, comparado con los mejores rivales de tu posición. El récord del equipo no es regla de votación, pero los ganadores reciben un pequeño impulso en el voto de la afición y los MVP salen de equipos ganadores.', 'Desempenho = OVR + produção da temporada − jogos perdidos, comparado com os melhores rivais da sua posição. A campanha do time não é regra de votação, mas os vencedores ganham um pequeno impulso no voto da torcida e os MVPs saem de times vencedores.')}</p></div></div>`;
