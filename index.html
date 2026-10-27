@@ -506,9 +506,24 @@ const REGIONS = [
   ['VI', 'US Virgin Islands (US Terr.)', 'Islas Vírgenes (Terr. EE. UU.)'], ['MP', 'Northern Mariana Is. (US Terr.)', 'Islas Marianas del Norte (Terr. EE. UU.)'],
   ['ON', 'Ontario (Canada)', 'Ontario (Canadá)'], ['QC', 'Quebec (Canada)', 'Quebec (Canadá)'], ['BC', 'British Columbia (Canada)', 'Columbia Británica (Canadá)'], ['AB', 'Alberta (Canada)', 'Alberta (Canadá)'],
   ['MB', 'Manitoba (Canada)', 'Manitoba (Canadá)'], ['SK', 'Saskatchewan (Canada)', 'Saskatchewan (Canadá)'], ['NS', 'Nova Scotia (Canada)', 'Nueva Escocia (Canadá)'], ['NB', 'New Brunswick (Canada)', 'Nuevo Brunswick (Canadá)'],
-  ['NL', 'Newfoundland & Labrador (Canada)', 'Terranova y Labrador (Canadá)'], ['PE', 'Prince Edward Island (Canada)', 'Isla del Príncipe Eduardo (Canadá)']
+  ['NL', 'Newfoundland & Labrador (Canada)', 'Terranova y Labrador (Canadá)'], ['PE', 'Prince Edward Island (Canada)', 'Isla del Príncipe Eduardo (Canadá)'],
+  // Mexico: only states where prep (juvenil) football is actually organized around the college programs (ONEFA / CONADEIP).
+  ['CMX', 'Mexico City (Mexico)', 'Ciudad de México (México)'], ['MEX', 'State of Mexico (Mexico)', 'Estado de México (México)'], ['NLE', 'Nuevo León (Mexico)', 'Nuevo León (México)'],
+  ['JAL', 'Jalisco (Mexico)', 'Jalisco (México)'], ['PUE', 'Puebla (Mexico)', 'Puebla (México)'], ['CHH', 'Chihuahua (Mexico)', 'Chihuahua (México)'],
+  ['COA', 'Coahuila (Mexico)', 'Coahuila (México)'], ['BCN', 'Baja California (Mexico)', 'Baja California (México)'], ['SON', 'Sonora (Mexico)', 'Sonora (México)'],
+  ['QUE', 'Querétaro (Mexico)', 'Querétaro (México)']
 ];
-const REGION_PT = {"DC": "Distrito de Colúmbia", "HI": "Havaí", "LA": "Luisiana", "MS": "Mississípi", "NH": "Nova Hampshire", "NJ": "Nova Jersey", "NM": "Novo México", "NY": "Nova York", "NC": "Carolina do Norte", "ND": "Dakota do Norte", "PA": "Pensilvânia", "SC": "Carolina do Sul", "SD": "Dakota do Sul", "WV": "Virgínia Ocidental", "VA": "Virgínia", "CA": "Califórnia", "GA": "Geórgia", "FL": "Flórida", "PR": "Porto Rico (Terr. EUA)", "GU": "Guam (Terr. EUA)", "AS": "Samoa Americana (Terr. EUA)", "VI": "Ilhas Virgens (Terr. EUA)", "MP": "Ilhas Marianas do Norte (Terr. EUA)", "ON": "Ontário (Canadá)", "QC": "Quebec (Canadá)", "BC": "Colúmbia Britânica (Canadá)", "AB": "Alberta (Canadá)", "MB": "Manitoba (Canadá)", "SK": "Saskatchewan (Canadá)", "NS": "Nova Escócia (Canadá)", "NB": "Nova Brunswick (Canadá)", "NL": "Terra Nova e Labrador (Canadá)", "PE": "Ilha do Príncipe Eduardo (Canadá)"};
+// "Nuevo León, Mexico" / "Texas" / "Guam": full localized name for cards (territory tags dropped, country after a comma)
+function regionName(code) {
+  const r = REGIONS.find((x) => x[0] === code); if (!r) return code || '';
+  const n = lang === 'es' ? r[2] : lang === 'pt' ? (REGION_PT[code] || r[1]) : r[1];
+  return n.replace(/\s*\((US Terr\.|Terr\. EE\. UU\.|Terr\. EUA)\)$/, '').replace(/\s*\(([^)]*)\)$/, ', $1');
+}
+// Mexican prep football is real but small: no state or national powerhouses there, only regular school teams.
+const MX_REG = new Set(['CMX', 'MEX', 'NLE', 'JAL', 'PUE', 'CHH', 'COA', 'BCN', 'SON', 'QUE']);
+const MX_HS = ['Prepa Sierra Madre', 'Colegio Valle Alto', 'Prepa Lomas del Norte', 'Instituto Real del Bosque', 'Prepa Cerro Azul', 'Colegio Monte Verde'];
+const hsNamePool = (code) => (MX_REG.has(code) ? MX_HS : REG_NAMES);
+const REGION_PT = {"CMX": "Cidade do México (México)", "MEX": "Estado do México (México)", "NLE": "Nuevo León (México)", "JAL": "Jalisco (México)", "PUE": "Puebla (México)", "CHH": "Chihuahua (México)", "COA": "Coahuila (México)", "BCN": "Baixa Califórnia (México)", "SON": "Sonora (México)", "QUE": "Querétaro (México)", "DC": "Distrito de Colúmbia", "HI": "Havaí", "LA": "Luisiana", "MS": "Mississípi", "NH": "Nova Hampshire", "NJ": "Nova Jersey", "NM": "Novo México", "NY": "Nova York", "NC": "Carolina do Norte", "ND": "Dakota do Norte", "PA": "Pensilvânia", "SC": "Carolina do Sul", "SD": "Dakota do Sul", "WV": "Virgínia Ocidental", "VA": "Virgínia", "CA": "Califórnia", "GA": "Geórgia", "FL": "Flórida", "PR": "Porto Rico (Terr. EUA)", "GU": "Guam (Terr. EUA)", "AS": "Samoa Americana (Terr. EUA)", "VI": "Ilhas Virgens (Terr. EUA)", "MP": "Ilhas Marianas do Norte (Terr. EUA)", "ON": "Ontário (Canadá)", "QC": "Quebec (Canadá)", "BC": "Colúmbia Britânica (Canadá)", "AB": "Alberta (Canadá)", "MB": "Manitoba (Canadá)", "SK": "Saskatchewan (Canadá)", "NS": "Nova Escócia (Canadá)", "NB": "Nova Brunswick (Canadá)", "NL": "Terra Nova e Labrador (Canadá)", "PE": "Ilha do Príncipe Eduardo (Canadá)"};
 
 const HIGH_SCHOOLS = [
   { id: 'springfield', name: 'Springfield Public High', state: 'OH', tier: 'Regular', color: '#2563eb', abbr: 'SPH' },
@@ -1092,19 +1107,22 @@ function natStates() {
 const hasNational = (code) => HIGH_SCHOOLS.some((s) => s.tier === 'National_Powerhouse' && s.state === code);
 // Every state/territory/province gets a fictional state powerhouse; only a few states host a national powerhouse.
 function statePowerhouses(code) {
+  if (MX_REG.has(code)) return [];
   const own = HIGH_SCHOOLS.filter((s) => s.tier === 'State_Powerhouse' && s.state === code);
   if (own.length) return own;
   const hh = xmur3('sp|' + code)(), name = `${code} ${SP_NAMES[hh % SP_NAMES.length]}`;
   return [{ id: 'sp_' + code, name, state: code, tier: 'State_Powerhouse', color: SP_COLORS[hh % SP_COLORS.length], abbr: abbrOf(name.slice(3)), gen: true }];
 }
+// Keep a default school name that fits the country (a name the player typed is never touched).
+function fitHsName() { const p = hsNamePool(CR.region); if ([...REG_NAMES, ...MX_HS].includes(CR.hsName) && !p.includes(CR.hsName)) CR.hsName = p[mrand(p.length)]; }
 function customRegular(code) {
   const name = (CR.hsName || '').trim().slice(0, 28) || REG_NAMES[0];
   return { id: 'my_hs', name, state: code, tier: 'Regular', color: JERSEY[avatar.jcol % JERSEY.length], abbr: abbrOf(name.replace(/\bHigh\b|\bSchool\b/g, '')) || 'HS', gen: true };
 }
 function registerSchools(list) { (list || []).forEach((s) => { const i = HIGH_SCHOOLS.findIndex((x) => x.id === s.id); if (i >= 0) HIGH_SCHOOLS.splice(i, 1); HIGH_SCHOOLS.push(s); }); }
 function assignSchool(regCode, mode) {
-  let tier = mode;
-  if (mode === 'random') { const r = rand() * 100; tier = r < 52 ? 'Regular' : r < 85 || !hasNational(regCode) ? 'State_Powerhouse' : 'National_Powerhouse'; }
+  let tier = MX_REG.has(regCode) ? 'Regular' : mode;
+  if (tier === 'random') { const r = rand() * 100; tier = r < 52 ? 'Regular' : r < 85 || !hasNational(regCode) ? 'State_Powerhouse' : 'National_Powerhouse'; }
   if (tier === 'National_Powerhouse' && !hasNational(regCode)) tier = 'State_Powerhouse';
   if (tier === 'Regular') return customRegular(regCode);
   if (tier === 'State_Powerhouse') return pick(statePowerhouses(regCode));
@@ -2216,7 +2234,7 @@ function addHallEntry(rookie) {
   G.honors.forEach((x) => { cnt[x.k] = (cnt[x.k] || 0) + 1; });
   const e = { id: G.seed + '|' + Date.now(), ts: Date.now(), name: G.name, num: G.num, pos: G.subPos, av: Object.assign({}, G.av),
     pro: !!H.pro, first: !!H.first, col: !!H.col, rookie: !!rookie, score: rookie ? Math.round(H.score * 100 + H.colScore * 30) : legacyScore(H), proScore: H.score, colScore: H.colScore,
-    peak: G.peakOvr, fame: G.fame, earn: grossEarn(), seed: G.seed, honors: cnt,
+    peak: G.peakOvr, fame: G.fame, earn: grossEarn(), seed: G.seed, honors: cnt, region: G.region,
     COL: H.col || (rookie && G.hist.some((h) => h.stage === 'COL')) ? levelSnap('COL') : null, PRO: H.pro || (rookie && G.hist.some((h) => h.stage === 'PRO')) ? levelSnap('PRO') : null };
   const all = (META.hall || []).filter((x) => x.ts && (rookie || !x.rookie)).concat([e]).sort((a, b) => b.score - a.score), perGroup = {};
   META.hall = all.filter((x, i) => { const g = posGroupOf(x.pos); perGroup[g] = (perGroup[g] || 0) + 1; return i < HALL_MAX || perGroup[g] <= 10; });
@@ -2249,7 +2267,7 @@ function hallCardHTML(e, rank) {
       <div class="hc-grid"><span>${L('Yrs', 'Años', 'Anos')}<b>${snap.yrs}</b></span><span>G<b>${snap.gp}</b></span><span>GS<b>${snap.gs}</b></span><span>W-L<b>${snap.w}-${snap.l}</b></span>${snap.cells.map(([k, v]) => `<span>${k}<b>${v}</b></span>`).join('')}</div></div>` : '';
   const H = e.honors || {}, badge = (n, t) => (n ? `<span class="tag y">${t}${n > 1 ? ' ×' + n : ''}</span>` : '');
   return `<div class="ph yh"><span>${ORD(rank)} · ${L('Legend Card', 'Tarjeta de Leyenda', 'Card de Lenda')}</span><span>${String(e.score).padStart(6, '0')}</span></div><div class="pb hallcard">
-    <div class="hc-top"><canvas data-hav="1" width="48" height="48"></canvas><div><b class="px">${esc(e.name)} #${e.num}</b><p>${e.pos} · ${L('Peak', 'Pico', 'Auge')} OVR ${e.peak} · ${L('Fame', 'Fama', 'Fama')} ${e.fame}</p>
+    <div class="hc-top"><canvas data-hav="1" width="48" height="48"></canvas><div><b class="px">${esc(e.name)} #${e.num}</b><p>${e.pos} · ${L('Peak', 'Pico', 'Auge')} OVR ${e.peak} · ${L('Fame', 'Fama', 'Fama')} ${e.fame}</p>${e.region ? `<p class="d">${esc(regionName(e.region))}</p>` : ''}
       <p class="y">${e.pro ? (e.first ? L('PRO HOF · FIRST BALLOT', 'HOF PRO · PRIMERA BOLETA', 'HOF PRO · PRIMEIRA VOTAÇÃO') : L('PRO HALL OF FAME', 'SALÓN DE LA FAMA PRO', 'HALL DA FAMA PRO')) : ''}${e.pro && e.col ? ' + ' : ''}${e.col ? L('COLLEGE HOF', 'HOF UNIVERSITARIO', 'HOF UNIVERSITÁRIO') : ''}</p>
       ${e.rookie ? `<p class="d">${L('First career · not in the Hall of Fame yet', 'Primera carrera · aún no está en el Salón de la Fama', 'Primeira carreira · ainda não está no Hall da Fama')}</p>` : ''}<p class="d">${e.rookie ? L('Retired', 'Retirado', 'Aposentado') : L('Inducted', 'Exaltado', 'Eleito')} ${fmtTs(e.ts)}</p></div></div>
     <div class="hc-badges">${badge(H.mvp, 'MVP')}${badge(H.dpoy, 'DPOY')}${badge(H.allpro, 'AL-1')}${badge(H.allpro2, 'AL-2')}${badge(H.allstar, 'AS')}${badge(H.league, L('Champ', 'Campeón', 'Campeão'))}${badge(H.helmet, 'POY')}${badge(H.allam, 'AA')}${badge(H.natcol, L('Nat. Champ', 'Camp. Nac.', 'Camp. Nac.'))}</div>
@@ -2376,23 +2394,25 @@ function renderCreator() {
   const natOK = hasNational(CR.region);
   if (CR.school === 'random') CR.school = 'Regular'; // lottery now lives in Quick Play only
   if (!natOK && CR.school === 'National_Powerhouse') CR.school = 'State_Powerhouse';
+  const mx = MX_REG.has(CR.region);
+  if (mx) CR.school = 'Regular';
   const spNames = statePowerhouses(CR.region).map((s) => s.name).join(' / '), natNames = HIGH_SCHOOLS.filter((s) => s.tier === 'National_Powerhouse' && s.state === CR.region).map((s) => s.name).join(' / ');
   const ebMax = META.unlock.goldVisor ? 5 : 4, jcMax = META.unlock.goldJersey ? JERSEY.length : JC_FREE;
   const schoolLbl = { random: L('Lottery', 'Sorteo', 'Sorteio'), Regular: L('Regular HS', 'Prepa Regular', 'Escola Comum'), State_Powerhouse: L('State Powerhouse', 'Potencia Estatal', 'Potência Estadual'), National_Powerhouse: L('National Powerhouse', 'Potencia Nacional', 'Potência Nacional') }[CR.school];
   const faceBody = `<div class="face-ed"><div class="face-pv"><canvas id="face-cv2" width="96" height="96"></canvas><button class="btn" data-act="randFace" aria-label="${L('Random face', 'Rostro al azar', 'Rosto aleatório')}">🎲</button></div>
     <div class="chips">${[['skin', L('Skin', 'Piel', 'Pele'), 6], ['hair', L('Hair', 'Pelo', 'Cabelo'), HAIR_STYLES], ['hcol', L('Hair Col', 'Color', 'Cor'), HAIR.length], ['eye', L('Eyes', 'Ojos', 'Olhos'), EYES.length], ['eyeblack', L('Face Gear', 'Accesorio', 'Acessório'), ebMax], ['jaw', L('Jaw', 'Mandíbula', 'Mandíbula'), 2], ['beard', L('Beard', 'Barba', 'Barba'), 3], ['band', L('Band', 'Banda', 'Faixa'), 3], ['jcol', 'Jersey', jcMax]]
       .map(([k, n, mx]) => `<button class="chip" data-act="face" data-k="${k}" data-m="${mx}">${n}: ${CHIP_NAMES[k] ? tx(CHIP_NAMES[k][(avatar[k] || 0) % CHIP_NAMES[k].length]) : `${(avatar[k] || 0) + 1}/${mx}`}</button>`).join('')}</div></div>`;
-  const homeBody = `<label class="lbl">${L('State / US Territory / Canada', 'Estado / Territorio / Canadá', 'Estado / Território / Canadá')}</label>
+  const homeBody = `<label class="lbl">${L('State / US Territory / Canada / Mexico', 'Estado / Territorio / Canadá / México', 'Estado / Território / Canadá / México')}</label>
       <div style="display:flex;gap:5px"><select id="sel-region" class="inp">${REGIONS.map((r) => `<option value="${r[0]}" ${CR.region === r[0] ? 'selected' : ''}>${r[0]} — ${lang === 'es' ? r[2] : lang === 'pt' ? (REGION_PT[r[0]] || r[1]) : r[1]}</option>`).join('')}</select><button class="chip" data-act="randRegion">🎲</button></div>
       <label class="lbl mt">${L('High school assignment', 'Asignación de preparatoria', 'Escolha da escola')}</label>
       <select id="sel-school" class="inp">
         <option value="Regular" ${CR.school === 'Regular' ? 'selected' : ''}>${L('Regular HS — name it yourself', 'Prepa Regular — ponle tu nombre', 'Escola Comum — dê o nome você')}</option>
-        <option value="State_Powerhouse" ${CR.school === 'State_Powerhouse' ? 'selected' : ''}>${L('State Powerhouse', 'Potencia Estatal', 'Potência Estadual')} — ${spNames}</option>
+        <option value="State_Powerhouse" ${CR.school === 'State_Powerhouse' ? 'selected' : ''} ${mx ? 'disabled' : ''}>${L('State Powerhouse', 'Potencia Estatal', 'Potência Estadual')} — ${mx ? L('none in Mexico', 'ninguna en México', 'nenhuma no México') : spNames}</option>
         <option value="National_Powerhouse" ${CR.school === 'National_Powerhouse' ? 'selected' : ''} ${natOK ? '' : 'disabled'}>${L('National Powerhouse', 'Potencia Nacional', 'Potência Nacional')} — ${natOK ? natNames : L('none in this state', 'ninguna en este estado', 'nenhuma neste estado')}</option>
       </select>
       ${CR.school !== 'State_Powerhouse' && CR.school !== 'National_Powerhouse' ? `<label class="lbl mt" for="in-hs">${L('Your regular high school\'s name', 'Nombre de tu prepa regular', 'Nome da sua escola comum')}</label>
       <div style="display:flex;gap:5px"><input id="in-hs" class="inp" maxlength="28" value="${esc(CR.hsName)}"><button class="chip" data-act="randHs">🎲</button></div>` : ''}
-      ${natOK ? '' : `<div class="natlist"><b>${L(`No national powerhouse in ${CR.region}. They are in:`, `No hay potencia nacional en ${CR.region}. Están en:`, `Não há potência nacional em ${CR.region}. Elas estão em:`)}</b>${natStates().map(([st, ns]) => `<button class="pill" data-act="pickState" data-v="${st}">${st}</button><span>${ns}</span>`).join('')}</div>`}`;
+      ${natOK || mx ? '' : `<div class="natlist"><b>${L(`No national powerhouse in ${CR.region}. They are in:`, `No hay potencia nacional en ${CR.region}. Están en:`, `Não há potência nacional em ${CR.region}. Elas estão em:`)}</b>${natStates().map(([st, ns]) => `<button class="pill" data-act="pickState" data-v="${st}">${st}</button><span>${ns}</span>`).join('')}</div>`}`;
   const seedBody = `<label class="lbl" for="in-seed">${L('Career seed — same seed = same starting ratings', 'Semilla — misma semilla = mismos atributos iniciales', 'Semente — mesma semente = mesmos atributos iniciais')}</label>
       <div style="display:flex;gap:6px;align-items:center"><input id="in-seed" class="inp" maxlength="18" value="${esc(CR.seed)}" ${CR.seedOk ? '' : 'readonly'} style="text-align:center"><button class="btn" data-act="rerollSeed" aria-label="${L('New random seed', 'Nueva semilla', 'Nova semente')}">🎲</button></div>
       <p class="hint" style="margin-bottom:0">${CR.seedOk ? L('Unlocked: paste or type any seed (a friend\'s, or one from a Legend Card).', 'Desbloqueado: pega o escribe cualquier semilla (la de un amigo o de una Tarjeta de Leyenda).', 'Desbloqueado: cole ou digite qualquer semente (de um amigo ou de um Card de Lenda).') : L('Locked — use the 🎬 seed button below to paste your own.', 'Bloqueada — usa el botón 🎬 de semilla de abajo para pegar la tuya.', 'Bloqueada — use o botão 🎬 de semente abaixo para colar a sua.')}</p>`;
@@ -2421,7 +2441,7 @@ function renderCreator() {
   drawFace();
   $('in-name').oninput = (e) => { CR.name = e.target.value; };
   $('in-num').oninput = (e) => { CR.num = clamp(parseInt(e.target.value || '0', 10) || 0, 0, 99); drawFace(); };
-  if ($('sel-region')) $('sel-region').onchange = (e) => { CR.region = e.target.value; renderCreator(); };
+  if ($('sel-region')) $('sel-region').onchange = (e) => { CR.region = e.target.value; fitHsName(); renderCreator(); };
   if ($('sel-school')) $('sel-school').onchange = (e) => { CR.school = e.target.value; renderCreator(); };
   if ($('in-hs')) $('in-hs').oninput = (e) => { CR.hsName = e.target.value; };
   if ($('in-seed')) $('in-seed').oninput = (e) => { CR.seed = e.target.value; };
@@ -3161,11 +3181,12 @@ function careerPNG() {
   const av = document.createElement('canvas'); av.width = 48; av.height = 48; drawAvatar(av, Object.assign({}, G.av, { num: G.num }));
   c.imageSmoothingEnabled = false; c.drawImage(av, 34, 34, 168, 168); c.strokeStyle = '#000'; c.lineWidth = 4; c.strokeRect(34, 34, 168, 168);
   c.fillStyle = '#ffd23f'; c.font = `22px ${f1}`; c.fillText('GRIDIRON LIFE', 228, 62);
-  c.fillStyle = '#fbfaf2'; { const t = `${G.name} #${G.num} ${G.subPos}`; let fs = 18; c.font = `${fs}px ${f1}`; while (fs > 9 && c.measureText(t).width > W - 260) { fs--; c.font = `${fs}px ${f1}`; } c.fillText(t, 228, 102); }
+  c.fillStyle = '#fbfaf2'; { const t = `${G.name} #${G.num} ${G.subPos}`; let fs = 18; c.font = `${fs}px ${f1}`; while (fs > 9 && c.measureText(t).width > W - 260) { fs--; c.font = `${fs}px ${f1}`; } c.fillText(t, 228, 98); }
+  c.font = `24px ${f2}`; c.fillStyle = '#7f8ab3'; c.fillText(regionName(G.region), 228, 128);
   c.font = `28px ${f2}`; c.fillStyle = '#a7b1d4';
-  c.fillText(`${L('Peak', 'Pico', 'Auge')} OVR ${G.peakOvr} · ${L('Peak stars', 'Estrellas', 'Estrelas')} ${G.peakStars}★ · ${L('Fame', 'Fama', 'Fama')} ${G.fame}`, 228, 140);
-  c.fillText(`${L('Earnings', 'Ganancias', 'Ganhos')} ${money(grossEarn())} · ${G.proId ? proT(G.proId).name : G.colId ? col().name : hs().name}`, 228, 172);
-  c.fillStyle = '#3ddc84'; c.fillText(`${G.hof && G.hof.pro ? L('HALL OF LEGENDS · CLASS OF ', 'SALÓN DE LEYENDAS · CLASE ', 'HALL DAS LENDAS · TURMA ') + (G.retiredYear + 5) : L('Career complete', 'Carrera completa', 'Carreira completa')}${G.hof && G.hof.col ? L(' · College HOF', ' · HOF Universitario', ' · HOF Universitário') : ''}${G.clutchStars ? ' · Mr. Clutch ' + '★'.repeat(G.clutchStars) : ''}`, 228, 204);
+  c.fillText(`${L('Peak', 'Pico', 'Auge')} OVR ${G.peakOvr} · ${L('Peak stars', 'Estrellas', 'Estrelas')} ${G.peakStars}★ · ${L('Fame', 'Fama', 'Fama')} ${G.fame}`, 228, 156);
+  c.fillText(`${L('Earnings', 'Ganancias', 'Ganhos')} ${money(grossEarn())} · ${G.proId ? proT(G.proId).name : G.colId ? col().name : hs().name}`, 228, 184);
+  c.fillStyle = '#3ddc84'; c.fillText(`${G.hof && G.hof.pro ? L('HALL OF LEGENDS · CLASS OF ', 'SALÓN DE LEYENDAS · CLASE ', 'HALL DAS LENDAS · TURMA ') + (G.retiredYear + 5) : L('Career complete', 'Carrera completa', 'Carreira completa')}${G.hof && G.hof.col ? L(' · College HOF', ' · HOF Universitario', ' · HOF Universitário') : ''}${G.clutchStars ? ' · Mr. Clutch ' + '★'.repeat(G.clutchStars) : ''}`, 228, 212);
   // trophy summary
   c.fillStyle = '#ffd23f'; c.font = `11px ${f1}`; c.fillText(L('TROPHY CASE', 'VITRINA', 'ESTANTE'), 40, honTop - 12);
   if (!stacks.length) { c.fillStyle = '#a7b1d4'; c.font = `26px ${f2}`; c.fillText(L('No trophies — but what a ride.', 'Sin trofeos — pero qué viaje.', 'Sem troféus — mas que jornada.'), 40, honTop + 24); }
@@ -3249,7 +3270,7 @@ const ACT = {
     // Quick Play: random player, position, home state and school — straight into the first camp.
     ACT.randFace(); CR.name = mrand(100) < 30 ? funName() : `${FIRST_NAMES[mrand(FIRST_NAMES.length)]} ${LAST_NAMES[mrand(LAST_NAMES.length)]}`;
     CR.num = 1 + mrand(99); const pgs = Object.keys(POS_GROUPS); CR.pg = pgs[mrand(pgs.length)]; CR.sub = POS_GROUPS[CR.pg].subs[mrand(POS_GROUPS[CR.pg].subs.length)];
-    CR.region = REGIONS[mrand(mrand(100) < 88 ? 51 : REGIONS.length)][0]; CR.school = 'random'; CR.hsName = REG_NAMES[mrand(REG_NAMES.length)];
+    CR.region = REGIONS[mrand(mrand(100) < 88 ? 51 : REGIONS.length)][0]; CR.school = 'random'; CR.hsName = hsNamePool(CR.region)[mrand(hsNamePool(CR.region).length)];
     CR.seed = Math.random().toString(36).slice(2, 10); CR.seedOk = false;
     Ads.commercial().then(startCareer);
   },
@@ -3262,9 +3283,9 @@ const ACT = {
   face: (d) => { avatar[d.k] = ((avatar[d.k] || 0) + 1) % parseInt(d.m, 10); renderCreator(); },
   pg: (d) => { CR.pg = d.v; CR.sub = POS_GROUPS[d.v].subs[0]; renderCreator(); },
   sub: (d) => { CR.sub = d.v; renderCreator(); },
-  randRegion: () => { CR.region = REGIONS[mrand(REGIONS.length)][0]; renderCreator(); },
+  randRegion: () => { CR.region = REGIONS[mrand(REGIONS.length)][0]; fitHsName(); renderCreator(); },
   pickState: (d) => { CR.region = d.v; CR.school = 'National_Powerhouse'; renderCreator(); },
-  randHs: () => { CR.hsName = REG_NAMES[mrand(REG_NAMES.length)]; renderCreator(); },
+  randHs: () => { const p = hsNamePool(CR.region); CR.hsName = p[mrand(p.length)]; renderCreator(); },
   rerollSeed: () => { CR.seed = Math.random().toString(36).slice(2, 10); renderCreator(); },
   adSeed: () => Ads.rewarded().then((ok) => { if (ok) { CR.seedOk = true; CR_OPEN.seed = true; toast(L('CUSTOM SEED UNLOCKED', 'SEMILLA DESBLOQUEADA', 'SEMENTE DESBLOQUEADA'), 'good'); SFX.play('up'); } else toast(L('AD NOT COMPLETED — NO REWARD', 'ANUNCIO INCOMPLETO — SIN PREMIO', 'ANÚNCIO INCOMPLETO — SEM PRÊMIO'), 'bad'); renderCreator(); if (ok && $('in-seed')) { $('in-seed').select(); } }),
   adWonder: () => Ads.rewarded().then((ok) => { if (ok) { CR.wonder = true; toast(L('WONDERKID! POTENTIAL +5', '¡PRODIGIO! POTENCIAL +5', 'PRODÍGIO! POTENCIAL +5'), 'good'); SFX.play('up'); } else toast(L('AD NOT COMPLETED — NO REWARD', 'ANUNCIO INCOMPLETO — SIN PREMIO', 'ANÚNCIO INCOMPLETO — SEM PRÊMIO'), 'bad'); renderCreator(); }),
