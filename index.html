@@ -2315,11 +2315,17 @@ function retire() {
    13. SAVE / LOAD
    ===================================================================== */
 function save() { if (!G) return; G.rng = RNG.s; G.lang = lang; Store.set('career', { G, av: avatar }); }
+// First visit: follow the browser (Spanish/Portuguese variants of any region); anything else falls back to English.
+function browserLang() {
+  try { for (const l of navigator.languages || [navigator.language || '']) { const p = String(l).toLowerCase().slice(0, 2); if (p === 'es' || p === 'pt') return p; if (p === 'en') return 'en'; } } catch (e) {}
+  return 'en';
+}
 function saveMeta() { META.lang = lang; Store.set('meta', { META }); }
 async function loadAll() {
   const m = await Store.get('meta');
+  const chosen = m && m.META && m.META.lang; // a language the player picked before always wins
   if (m && m.META) META = Object.assign(META, m.META);
-  lang = META.lang || 'en'; SFX.enabled = META.sfx !== false;
+  lang = chosen || browserLang(); document.documentElement.lang = lang === 'pt' ? 'pt-BR' : lang; SFX.enabled = META.sfx !== false;
   const s = await Store.get('career');
   return s && s.G && s.G.v === 2 ? s : null;
 }
