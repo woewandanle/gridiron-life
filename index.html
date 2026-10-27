@@ -610,7 +610,7 @@ const POST = {
 
 const FIRST_NAMES = ['Marcus', 'Jayden', 'Caleb', 'Deion', 'Mateo', 'Carlos', 'Bryce', 'Lamar', 'Diego', 'Travis', 'Aidan', 'Derrick', 'Jalen', 'Micah', 'Andrés', 'Tavita', 'Keoni', 'Luis', 'Isaiah', 'Noah'];
 const NAME_MAX = 24;
-const FUN_FIRST = ['Turbo', 'Sprocket', 'Thunderous', 'Maximillianus', 'Kazoo', 'Velcro', 'Gravy', 'Moonbeam', 'Xerxes', 'Lasagna', 'Hercuflex', 'Snorkelton', 'Duplex', 'Fennelworth', 'Rocketship', 'Brickhouse', 'Cornelius', 'Zephyrin', 'Octavius', 'Wolfgang', 'Bingham', 'Tornadoe', 'Parsnip', 'Laserbeam'];
+const FUN_FIRST = ['Triple', 'Turbo', 'Sprocket', 'Thunderous', 'Maximillianus', 'Kazoo', 'Velcro', 'Gravy', 'Moonbeam', 'Xerxes', 'Lasagna', 'Hercuflex', 'Snorkelton', 'Duplex', 'Fennelworth', 'Rocketship', 'Brickhouse', 'Cornelius', 'Zephyrin', 'Octavius', 'Wolfgang', 'Bingham', 'Tornadoe', 'Parsnip', 'Laserbeam'];
 const FUN_MID = ['Gravy', 'Danger', 'Sixpack', 'Thunder', 'Waffle', 'Q.', 'X.', 'Meatball', 'Turbo', 'Avalanche', 'Disco', 'Magnet'];
 const FUN_LAST = ['Flapjackson', 'Tacklesworth', 'Von Scrimmage', 'Bumbershoot', 'Quarterbackington', 'Touchdownowski', 'Fumbleton', 'Helmetsworth', 'Cheddarwood', 'Lawnmower', 'Pickleball', 'Grillmaster',
   'Snackwell-Gordon', 'Brickfist-Wellington', 'Frostbite-Calloway', 'McScramble', 'Blitzington', 'Megabyte', 'Thunderclap', 'Waffleton-Smythe', 'Endzone-Barkley', 'Sandwich-Montgomery', 'Gatorbait', 'Huddleston-Huddleston'];
@@ -628,7 +628,7 @@ function funNameRaw() {
   if (r <= 6) return `${F()} ${La()} ${S()}`;
   return `${F()} ${La()}`;
 }
-const LAST_NAMES = ['Williams', 'Daniels', 'Mendoza', 'Rivera', 'Johnson', 'Brooks', 'Ramirez', 'Turner', 'Hayes', 'Fuimaono', 'Kahale', 'Ortiz', 'Coleman', 'Price', 'Delgado', 'Washington',
+const LAST_NAMES = ['Kirk', 'Williams', 'Daniels', 'Mendoza', 'Rivera', 'Johnson', 'Brooks', 'Ramirez', 'Turner', 'Hayes', 'Fuimaono', 'Kahale', 'Ortiz', 'Coleman', 'Price', 'Delgado', 'Washington',
   'Kawaguchi', 'Thompson', 'Martinez', 'Anderson', 'Robinson', 'Okafor', 'Sullivan', 'Garcia', 'Jackson', 'Nguyen', 'Harris', 'Miller', 'Davis', 'Kim', 'Moore', 'Bennett'];
 const SKIN = ['#fde2c8', '#f5c396', '#e09e6d', '#b87343', '#844c27', '#542e16'];
 const HAIR = ['#181412', '#4a2e1b', '#8c5228', '#d9a441', '#c93b2b', '#e5e7eb', '#fde68a', '#2563eb', '#ec4899'];
@@ -933,16 +933,23 @@ const skill = () => clamp(Math.round((G.ab.sk1 + G.ab.sk2) / 2), 20, 80);
 //   × age multiplier by attribute type, so bodies grow cheap when young and get expensive after 29.
 const AB_KIND = { spd: 'P', brs: 'P', pow: 'P', agi: 'P', sk1: 'T', sk2: 'T', iq: 'M', clu: 'M' };
 const KIND_N = { P: B('Body', 'Físico', 'Físico'), T: B('Technique', 'Técnica', 'Técnica'), M: B('Mind', 'Mente', 'Mente') };
+// Hidden development type shifts the age curve: an early bloomer's body gets expensive ~3 years sooner
+// (technique ~2), a late bloomer's a year later. The ceiling of an early bloomer is the clock, not the white line.
+const DEV_SHIFT = { early: [3, 2], late: [-1, -1] };
 function kindMul(t, a) {
   a = a == null ? (G ? G.age : 14) : a;
-  if (t === 'P') return a <= 21 ? 0.8 : a <= 26 ? 1 : a <= 29 ? 1.3 : 1.6;
-  if (t === 'T') return a <= 16 ? 1.1 : a <= 28 ? 0.9 : a <= 31 ? 1.1 : 1.4;
+  const sh = (G && DEV_SHIFT[G.dev]) || [0, 0];
+  if (t === 'P') return a <= 21 ? (G && G.dev === 'late' ? 1 : 0.8) : a <= 26 - sh[0] ? 1 : a <= 29 - sh[0] ? 1.3 : 1.6;
+  if (t === 'T') return a <= 16 ? 1.1 : a <= 28 - sh[1] ? 0.9 : a <= 31 - sh[1] ? 1.1 : 1.4;
   return a <= 17 ? 1.3 : 1;
 }
 const stepCost = (cur) => (cur >= 72 ? 3 : cur >= 64 ? 2 : 1);
+// Early bloomers can train 3 levels past the white line at normal cost while still young (≤21): they run hot in college,
+// then hit the lower ceiling as pros — the white line and the age clock both close in at once.
+const overPot = (cur, pot, age) => cur >= pot + (G && G.dev === 'early' && (age == null ? G.age : age) <= 21 ? 3 : 0);
 function lvCost(k, cur, pot, age) {
   let c = stepCost(cur);
-  if (cur >= pot) c *= 3;
+  if (overPot(cur, pot, age)) c *= 3;
   return Math.max(1, Math.round(c * kindMul(AB_KIND[k], age)));
 }
 function applyPoints(ab, pot, carry, key, pts) {
@@ -1000,8 +1007,9 @@ const AGING = {
 const AGELESS_MAX = 4, IRON_MAX = 2;
 const ageBonus = () => (G && G.ageless) || 0; // shifts decline + retirement
 const ironBonus = () => (G && G.iron) || 0;    // routine: only pushes forced retirement back
-const decAge = (sub) => AGING[sub].dec + ageBonus();
-const peakEnd = () => AGING[G.subPos].peak[1] + ageBonus();
+const devAge = () => (G && G.dev === 'early' ? -2 : G && G.dev === 'late' ? 1 : 0); // early bloomers peak and fade sooner
+const decAge = (sub) => AGING[sub].dec + ageBonus() + devAge();
+const peakEnd = () => AGING[G.subPos].peak[1] + ageBonus() + devAge();
 // How long a body lasts past the decline age (Ageless / Iron Routine push it back): speed positions (RB/WR/CB/S) wear out fastest.
 const SPEED_POS = ['RB', 'WR', 'CB', 'S'];
 const retireAge = () => decAge(G.subPos) + (SPEED_POS.includes(G.subPos) ? 3 : 4) + ironBonus();
@@ -1119,7 +1127,7 @@ function startCareer() {
   const customSchools = school.gen ? [school] : [];
   registerSchools(customSchools);
   const vip = CR.wonder ? 5 : 0, wonder = CR.wonder;
-  CR.wonder = false; CR.seedOk = false;
+  CR.wonder = false; CR.seedOk = false; CR.seed = ''; // a custom seed is good for one career; the next one rolls fresh
   const ab = { spd: ri(23, 29), brs: ri(23, 29), pow: ri(22, 28), agi: ri(23, 29), iq: ri(23, 29), sk1: ri(25, 31), sk2: ri(25, 31), clu: ri(23, 29) };
   // OOTP-style ceilings: one elite tool, one plus tool, the rest taper off. Position-relevant tools are likelier to draw the high tiers.
   const TIERS = [[72, 80], [66, 76], [62, 72], [58, 68], [54, 66], [50, 64], [46, 62], [46, 60]];
@@ -1131,10 +1139,17 @@ function startCareer() {
   }
   const pot = {};
   order.forEach((k, i) => { pot[k] = clamp(ri(TIERS[i][0], TIERS[i][1]) + vip, 45, 80); });
+  // Development curve (hidden, ~10/80/10): early bloomers are physically ahead now but top out lower (HS/college
+  // dominators who stall in the pros); late bloomers start raw with a higher ceiling. Same seed = same curve.
+  const dv = xmur3(seed + '|dev')() % 100, dev = dv < 10 ? 'early' : dv >= 90 ? 'late' : 'normal';
+  if (dev !== 'normal') ATTR_KEYS.forEach((k) => {
+    if (dev === 'early') { ab[k] = clamp(ab[k] + 7, 20, 80); pot[k] = clamp(pot[k] - (['spd', 'brs', 'pow', 'agi'].includes(k) ? 8 : 4), 45, 80); } // lower ceiling, but no white-line penalty until 22 (overPot)
+    else { ab[k] = clamp(ab[k] - 3, 20, 80); pot[k] = clamp(pot[k] + 4, 45, 80); }
+  });
   const teams = {};
   PRO_TEAMS.forEach((t) => { teams[t.id] = { r: ri(45, 85), cap: 0 }; });
   G = {
-    v: 2, seed, wonder, name: (CR.name || 'Marcus Williams').trim().slice(0, NAME_MAX), num: clamp(parseInt(CR.num, 10) || 0, 0, 99),
+    v: 2, seed, wonder, dev, name: (CR.name || 'Marcus Williams').trim().slice(0, NAME_MAX), num: clamp(parseInt(CR.num, 10) || 0, 0, 99),
     posGroup: CR.pg, subPos: CR.sub, region: CR.region, av: Object.assign({}, avatar),
     year: 2026, age: 14, stage: 'HS', stageYr: 1, customSchools, hsId: school.id, colId: null, proId: null,
     ab, pot, carry: { spd: 0, brs: 0, pow: 0, agi: 0, iq: 0, sk1: 0, sk2: 0, clu: 0 },
@@ -1174,7 +1189,7 @@ function yearlyGrowth() {
   else if (G.stage === 'COL') { add('pow', ri(0, 2)); add('brs', ri(0, 1)); add('iq', ri(0, 1)); }
   else if (G.stage === 'PRO') {
     const A = AGING[G.subPos], y = G.age - decAge(G.subPos) + 1, fast = ['RB', 'WR', 'CB', 'S'].includes(G.subPos) ? 1 : 0;
-    if (G.age < A.peak[0]) add('iq', 1);                       // still learning the pro game
+    if (G.age < A.peak[0] + devAge()) add('iq', 1);                       // still learning the pro game
     else if (G.age > peakEnd() && y <= 0) add('spd', -ri(0, 1)); // plateau: first lost step
     if (y > 0) {                                                // decline accelerates every 2 years
       const k = Math.floor((y - 1) / 2);
@@ -1489,9 +1504,9 @@ function gameStats(m, snaps, q, ctx) {
     return { d: { car, ryd, rtd, brk, rec, recyd, lng, x20 }, big: ryd >= 150 || rtd >= 2 || lng >= 50, line: `${car} CAR · ${ryd} YDS · ${rtd} TD · ${brk} BRK${lng >= 20 ? ` · LONG ${lng}` : ''}` };
   }
   if (sp === 'WR' || sp === 'TE') {
-    const wr = sp === 'WR';
-    const rec = Math.max(0, R((wr ? ri(2, 9) : ri(1, 6)) * m * (0.6 + (a.sk1 - 30) * 0.008)));
-    const ypr = wr ? clamp(10 + (a.spd - 30) * 0.06 + (a.sk2 - 30) * 0.04 + rf(-3, 4), 4, 24) : clamp(9 + (a.sk1 - 30) * 0.04 + rf(-2, 3), 4, 18);
+    const wr = sp === 'WR', sa = STAGE_ADJ(); // pro-equivalent ratings, like every other position (college WR ~1,000 yds All-Conf, ~1,300 All-American)
+    const rec = Math.max(0, R((wr ? ri(2, 9) : ri(1, 6)) * m * (0.6 + (a.sk1 + sa - 30) * 0.008)));
+    const ypr = wr ? clamp(10 + (a.spd + sa - 30) * 0.06 + (a.sk2 + sa - 30) * 0.04 + rf(-3, 4), 4, 24) : clamp(9 + (a.sk1 + sa - 30) * 0.04 + rf(-2, 3), 4, 18);
     const recyd = R(rec * ypr), rectd = Math.max(0, R(recyd / 120 + rf(-0.5, 0.5)));
     return { d: { rec, recyd, rectd }, big: recyd >= (wr ? 150 : 110) || rectd >= 3, line: `${rec} REC · ${recyd} YDS · ${rectd} TD` };
   }
@@ -1682,6 +1697,7 @@ const seasonPerf = (S, o) => o + clamp((statIndex(S.st, S.games.length) - 0.85) 
 const STARTERS = { QB: 1, RB: 1, WR: 3, TE: 1, OT: 2, OL: 3, DE: 2, DT: 2, DL: 2, LB: 3, CB: 2, S: 2, K: 1 };
 const PRO_MEAN = 65.2; // league-wide starter level after position normalization
 const POS_BASE = { QB: 64.7, RB: 58.9, WR: 60.6, TE: 60.3, CB: 57.0, S: 60.35, LB: 59.75, DE: 60.15, DL: 59.25, DT: 61.4, OL: 63.2, OT: 62.2, K: 64.0 };
+const COL_FIX = { QB: 2.3, RB: -2.3, WR: -2.5, TE: -2, LB: -2.6, DE: -2.6, DL: 1.7, DT: 1.7, CB: -0.6, S: 0.4, OT: 1, OL: 1.6, K: 1.7 };
 function Phi(z) { const t = 1 / (1 + 0.2316419 * Math.abs(z)), d = 0.3989423 * Math.exp(-z * z / 2), q = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274)))); return z > 0 ? 1 - q : q; }
 function rankOf(score, mean, teams) { const n = (STARTERS[G.subPos] || 1) * teams; return Math.max(1, 1 + Math.floor((1 - Phi((score - mean) / 3.2)) * n + rf(-0.5, 0.5))); }
 function awardsVoting(S, o) {
@@ -1694,12 +1710,16 @@ function awardsVoting(S, o) {
     V.al = { slots: s, rank: m, team: m <= s ? 1 : m <= 2 * s ? 2 : 0 };
     V.mvp = V.al.team === 1 && m === 1 && V.win && chance(pos === 'QB' ? 45 : ['RB', 'WR'].includes(pos) ? 8 : 3);
   } else if (G.stage === 'COL') {
-    const t = col().tier, s = ALL_SLOTS[pos];
-    const mc = rankOf(perf + rf(-0.8, 0.8), t === 'FCS' ? 49 : col().kind === 'G6' ? 53 : 57, COLLEGES.filter((x) => x.conf === col().conf).length);
+    // POS_BASE is tuned on pro OVR spreads; COL_FIX re-levels the positions on college seasons (measured on 600+ college starters),
+    // so a college 60-62 makes 1st Team All-Conference ~3 in 4 seasons and All-American ~1 in 4, at every position.
+    const t = col().tier, s = ALL_SLOTS[pos], pc = perf + (COL_FIX[pos] || 0);
+    const mc = rankOf(pc + rf(-0.8, 0.8), t === 'FCS' ? 48.5 : col().kind === 'G6' ? 52.5 : 56.5, COLLEGES.filter((x) => x.conf === col().conf).length);
     V.conf = { slots: s, rank: mc, team: mc <= s ? 1 : mc <= 2 * s ? 2 : 0, name: col().conf };
-    const ma = rankOf(perf + rf(-0.8, 0.8), t === 'FCS' ? 52 : 58, t === 'FCS' ? 128 : 134);
+    const ma = rankOf(pc + rf(-0.8, 0.8), t === 'FCS' ? 50.8 : 56.8, t === 'FCS' ? 128 : 134);
     V.aa = { slots: s, rank: ma, sel: ma <= s, fcs: t === 'FCS' };
-    V.poy = V.aa.sel && !V.aa.fcs && ma === 1 && S.w >= 10 && ['QB', 'RB', 'WR'].includes(pos) && chance(pos === 'QB' ? 60 : 35);
+    // Heisman-style vote: QBs win most years (~80% since 2000), RBs/WRs need a historic season; voters almost never crown a repeat
+    // winner (Archie Griffin, 1974-75, is the only one), so a past winner's odds drop to a fifth.
+    V.poy = V.aa.sel && !V.aa.fcs && ma === 1 && S.w >= 10 && ['QB', 'RB', 'WR'].includes(pos) && chance((pos === 'QB' ? 50 : pos === 'RB' ? 15 : 10) * (hcount('helmet') ? 0.2 : 1));
   }
   return V;
 }
@@ -2165,7 +2185,7 @@ const HOF_BAR = 90, HOF_FIRST = 150; // rings/dynasties, longevity and milestone
    Each entry is a compact snapshot (~1–2 KB): name, face, inducted levels, career totals, award counts and the
    real-world timestamp. Only the top HALL_MAX entries are kept, so it stays under ~100 KB even after years of use. */
 const HALL_MAX = 50;
-const legacyScore = (H) => Math.round((H.pro ? H.score : 0) * 100 + (H.col ? H.colScore : 0) * 50);
+const legacyScore = (H) => Math.round((H.pro ? H.score : 0) * 100 + (H.col ? H.colScore : 0) * 30); // the pro career is what makes a legend
 function levelSnap(lv) {
   const T = levelTotals(lv); if (!T.rows.length) return null;
   const cols = STAT_COLS[G.subPos];
@@ -2177,7 +2197,7 @@ function addHallEntry(rookie) {
   const H = G.hof, cnt = {};
   G.honors.forEach((x) => { cnt[x.k] = (cnt[x.k] || 0) + 1; });
   const e = { id: G.seed + '|' + Date.now(), ts: Date.now(), name: G.name, num: G.num, pos: G.subPos, av: Object.assign({}, G.av),
-    pro: !!H.pro, first: !!H.first, col: !!H.col, rookie: !!rookie, score: rookie ? Math.round(H.score * 100 + H.colScore * 50) : legacyScore(H), proScore: H.score, colScore: H.colScore,
+    pro: !!H.pro, first: !!H.first, col: !!H.col, rookie: !!rookie, score: rookie ? Math.round(H.score * 100 + H.colScore * 30) : legacyScore(H), proScore: H.score, colScore: H.colScore,
     peak: G.peakOvr, fame: G.fame, earn: grossEarn(), seed: G.seed, honors: cnt,
     COL: H.col || (rookie && G.hist.some((h) => h.stage === 'COL')) ? levelSnap('COL') : null, PRO: H.pro || (rookie && G.hist.some((h) => h.stage === 'PRO')) ? levelSnap('PRO') : null };
   const all = (META.hall || []).filter((x) => x.ts && (rookie || !x.rookie)).concat([e]).sort((a, b) => b.score - a.score), perGroup = {};
@@ -2458,7 +2478,7 @@ const dieHTML = (n, cls) => `<div class="die ${n === 6 ? 'six' : ''} ${cls || ''
 
 function attrGrid(can) {
   return `<div class="attr-grid">${ATTR_KEYS.map((k) => {
-    const v = G.ab[k], p = G.pot[k], cost = lvCost(k, v, p), cr = G.carry[k] || 0, en = can && v < 80, over = v >= p;
+    const v = G.ab[k], p = G.pot[k], cost = lvCost(k, v, p), cr = G.carry[k] || 0, en = can && v < 80, over = overPot(v, p);
     return `<button class="attr ${en ? 'on' : ''} ${isSkill(k) ? 'sk' : ''} ${over ? 'over' : ''}" data-act="spend" data-k="${k}" ${en ? '' : 'disabled'}>
       <div class="at"><span title="${esc(attrLabel(k))}">${esc(gridLabel(k))}</span><b>${v}<i>/${p}</i></b></div>
       <div class="bar"><div class="fill" style="width:${(v - 20) / 60 * 100}%"></div><div class="cap" style="left:${(p - 20) / 60 * 100}%"></div></div>
@@ -2466,7 +2486,7 @@ function attrGrid(can) {
   }).join('')}</div>`;
 }
 function costLegend() {
-  const tip = { P: L('cheap until 21, pricey after 29', 'barato hasta 21, caro después de 29', 'barato até 21, caro depois dos 29'), T: L('best value 17–28', 'mejor valor 17–28', 'melhor custo 17–28'), M: L('pricey before 18', 'caro antes de 18', 'caro antes dos 18') };
+  const tip = { P: L('cheap when young, pricey late', 'barato de joven, caro al final', 'barato quando jovem, caro no fim'), T: L('best value in your 20s', 'mejor valor en tus 20', 'melhor custo nos 20 e poucos'), M: L('pricey before 18', 'caro antes de 18', 'caro antes dos 18') };
   return `<div class="kinds">${['P', 'T', 'M'].map((t) => { const m = kindMul(t); return `<span class="kchip ${m < 1 ? 'g' : m > 1 ? 'r' : ''}"><b>${tx(KIND_N[t])} ×${m}</b>${tip[t]}</span>`; }).join('')}</div>
     <p class="hint" style="font-size:16px">${L('Cost per level: 1 pt below 64 · 2 at 64–71 · 3 at 72+. At or above your potential (white line) it costs ×3. Leftover points are stored toward the next level.', 'Costo por nivel: 1 pt bajo 64 · 2 de 64–71 · 3 desde 72. En o sobre tu potencial (línea blanca) cuesta ×3. Los puntos sobrantes se guardan para el siguiente nivel.', 'Custo por nível: 1 pt abaixo de 64 · 2 de 64–71 · 3 a partir de 72. No seu potencial ou acima (linha branca) custa ×3. Os pontos que sobram ficam guardados para o próximo nível.')}</p>`;
 }
@@ -2921,6 +2941,7 @@ function dossier(mode) {
     <h5>${L('Strengths', 'Fortalezas', 'Pontos fortes')}</h5><ul class="dz-s">${str.map((k) => li(k, 's')).join('')}</ul>
     <h5>${L('Weaknesses', 'Debilidades', 'Pontos fracos')}</h5><ul class="dz-w">${weak.map((k) => li(k, 'w')).join('')}</ul>
     <h5>${L('Sources say', 'Dicen las fuentes', 'Dizem as fontes')}</h5><p class="dz-q">${tx(src.t)}</p>
+    ${G.dev === 'early' ? `<p class="dz-q">${L('"Physically ahead of everyone his age. The question is how much is left in the tank."', '"Físicamente adelantado a todos los de su edad. La duda es cuánto le queda por crecer."', '"Fisicamente à frente de todos da idade dele. A dúvida é quanto ainda tem para crescer."')}</p>` : G.dev === 'late' ? `<p class="dz-q">${L('"Still raw and growing into his frame. If it clicks, the ceiling is special."', '"Todavía crudo y llenando su cuerpo. Si todo encaja, el techo es especial."', '"Ainda cru e crescendo no corpo. Se encaixar, o teto é especial."')}</p>` : ''}
     <h5>${L('Bottom line', 'Conclusión', 'Conclusão')}</h5><p>${bottom}</p>
     <p class="dz-foot">${L('Now / Potential grades on the 20–80 scouting scale, rounded to 5. 50 = average. Potential = the ceiling scouts project.', 'Notas actual / potencial en la escala de scouting 20–80, redondeadas a 5. 50 = promedio. Potencial = el techo que proyectan los scouts.', 'Notas atual / potencial na escala de scouting 20–80, arredondadas de 5 em 5. 50 = média. Potencial = o teto que os olheiros projetam.')}</p>
   </article>`;
@@ -2931,12 +2952,12 @@ function agingPanel() {
   if (G.stage === 'HS') return '';
   const A = AGING[G.subPos], dec = decAge(G.subPos), pk1 = peakEnd(), from = 21, to = retireAge(), cells = [];
   for (let a = from; a <= to; a++) {
-    const z = a < A.peak[0] ? 'g' : a <= pk1 ? 'p' : a < dec ? 'f' : 'd';
+    const z = a < A.peak[0] + devAge() ? 'g' : a <= pk1 ? 'p' : a < dec ? 'f' : 'd';
     cells.push(`<i class="ag-${z}${a === G.age ? ' now' : ''}"><b>${a}</b></i>`);
   }
   return `<div class="panel"><div class="ph"><span>${L('Aging Curve', 'Curva de Edad', 'Curva de Idade')} · ${G.subPos}</span><span>${L('Age', 'Edad', 'Idade')} ${G.age}</span></div><div class="pb">
     <div class="agebar">${cells.join('')}</div>
-    <div class="ag-leg"><span><i class="ag-g"></i>${L('Growing', 'Creciendo', 'Crescendo')}</span><span><i class="ag-p"></i>${L('Peak', 'Pico', 'Auge')} ${A.peak[0]}–${pk1}</span><span><i class="ag-f"></i>${L('Plateau', 'Meseta', 'Platô')}</span><span><i class="ag-d"></i>${L('Decline', 'Declive', 'Declínio')} ${dec}+</span></div>
+    <div class="ag-leg"><span><i class="ag-g"></i>${L('Growing', 'Creciendo', 'Crescendo')}</span><span><i class="ag-p"></i>${L('Peak', 'Pico', 'Auge')} ${A.peak[0] + devAge()}–${pk1}</span><span><i class="ag-f"></i>${L('Plateau', 'Meseta', 'Platô')}</span><span><i class="ag-d"></i>${L('Decline', 'Declive', 'Declínio')} ${dec}+</span></div>
     <p class="hint" style="margin:6px 0 0">${ageBonus() || ironBonus() ? `<b class="y">⏳ ${L('awards', 'premios', 'prêmios')} +${ageBonus()}/${AGELESS_MAX} · ${L('routine', 'rutina', 'rotina')} +${ironBonus()}/${IRON_MAX}</b> · ` : ''}${L(`Forced retirement at ${retireAge()}. Late-career awards (from age ${decAge(G.subPos) - 1}) push the clock back: MVP +2 yrs, ring or All-League 1st Team +1 (max +${AGELESS_MAX}). A disciplined routine (${SAFE_STREAK} straight Conservative successes) delays retirement only, +1 yr (max +${IRON_MAX}).`, `Retiro forzado a los ${retireAge()}. Los premios al final de la carrera (desde los ${decAge(G.subPos) - 1}) atrasan el reloj: MVP +2 años, anillo o Primer Equipo de la Liga +1 (máx. +${AGELESS_MAX}). Una rutina disciplinada (${SAFE_STREAK} éxitos Conservadores seguidos) solo atrasa el retiro, +1 año (máx. +${IRON_MAX}).`, `Aposentadoria forçada aos ${retireAge()}. Prêmios no fim da carreira (a partir dos ${decAge(G.subPos) - 1}) atrasam o relógio: MVP +2 anos, anel ou 1º Time da Liga +1 (máx. +${AGELESS_MAX}). Uma rotina disciplinada (${SAFE_STREAK} sucessos Conservadores seguidos) só atrasa a aposentadoria, +1 ano (máx. +${IRON_MAX}).`)}</p>
     <p class="hint" style="margin-bottom:0">${L('From the decline age, Speed and Burst drop every year (faster for RB/WR/CB/S), then Agility; Power fades slowly and position skills only after two years. The ceiling drops with them, and body training costs ×1.6 after 29. Football IQ keeps growing a little.', 'Desde la edad de declive, Velocidad y Explosividad bajan cada año (más rápido en RB/WR/CB/S), luego Agilidad; la Potencia se va despacio y las habilidades de posición solo después de dos años. El techo baja con ellas y el entrenamiento físico cuesta ×1.6 después de los 29. El IQ sigue subiendo un poco.', 'A partir da idade de declínio, Velocidade e Explosão caem todo ano (mais rápido em RB/WR/CB/S), depois Agilidade; a Força vai devagar e as habilidades da posição só depois de dois anos. O teto cai junto, e o treino físico custa ×1,6 depois dos 29. O QI continua subindo um pouco.')}</p></div></div>`;
 }
@@ -3207,7 +3228,7 @@ const ACT = {
     CR.seed = Math.random().toString(36).slice(2, 10); CR.seedOk = false;
     Ads.commercial().then(startCareer);
   },
-  toCreate: () => { CR.seed = CR.seed || Math.random().toString(36).slice(2, 10); showScreen('create'); },
+  toCreate: () => { if (!CR.seedOk || !CR.seed) CR.seed = Math.random().toString(36).slice(2, 10); showScreen('create'); },
   toTitle: () => showScreen('title'),
   lang: (d) => { lang = d.v; document.documentElement.lang = lang === 'pt' ? 'pt-BR' : lang; saveMeta(); if (G && !$('scr-game').classList.contains('hidden')) renderAll(); else if (!$('scr-create').classList.contains('hidden')) renderCreator(); else renderTitle(); },
   toggleSfx: () => { SFX.enabled = !SFX.enabled; META.sfx = SFX.enabled; saveMeta(); if (!SFX.enabled) BGM.pause(); else BGM.play(); if ($('scr-game').classList.contains('hidden')) renderTitle(); else openMenu(); },
@@ -3379,7 +3400,7 @@ const ACT = {
     openModal(`<div class="ph yh"><span>${L('Career Card', 'Tarjeta de Carrera', 'Card da Carreira')}</span></div><div class="pb"><img src="${url}" alt="career card" style="width:100%;border:3px solid #000"><p class="hint">${L('Long-press / right-click to save, or use the button.', 'Mantén presionado o clic derecho para guardar, o usa el botón.', 'Segure ou clique com o botão direito para salvar, ou use o botão.')}</p>
       <div class="row"><a class="btn yb" href="${url}" download="GridironLife_${esc(G.name.replace(/\s+/g, '_'))}.png">${L('Download', 'Descargar', 'Baixar')}</a><button class="btn" data-act="closeModal">OK</button></div></div>`);
   },
-  newCareer: () => { G = null; savedCareer = null; showScreen('create'); },
+  newCareer: () => { G = null; savedCareer = null; if (!CR.seedOk || !CR.seed) CR.seed = Math.random().toString(36).slice(2, 10); showScreen('create'); },
   toggleYr: (d) => { const y = d.v; const isOpen = openYears.has(y) || (!closedYears.has(y) && G.feed.length && String(G.feed[G.feed.length - 1].y) === y); if (isOpen) { openYears.delete(y); closedYears.add(y); } else { openYears.add(y); closedYears.delete(y); } renderView(); }
 };
 let menuOpen = false;
@@ -3431,7 +3452,7 @@ $('modal').addEventListener('click', (e) => { if (e.target.id === 'modal' && !$(
    17. TEST HOOK (headless QA) & BGM API
    ===================================================================== */
 const DEV_HOST = location.protocol === 'file:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
-window.GridironLife = {
+window.GridironLife = { colleges: () => COLLEGES,
   setBgm: (url) => BGM.set(url),
   setStrategy: (s) => { STRAT = s || null; },
   setEvStrategy: (m) => { EV_STRAT = m || null; },
