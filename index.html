@@ -519,6 +519,14 @@ function regionName(code) {
   const n = lang === 'es' ? r[2] : lang === 'pt' ? (REGION_PT[code] || r[1]) : r[1];
   return n.replace(/\s*\((US Terr\.|Terr\. EE\. UU\.|Terr\. EUA)\)$/, '').replace(/\s*\(([^)]*)\)$/, ', $1');
 }
+// Bio line, NFL-style: "HS: Westbrook High (TX)"; outside the US the country alone ("Prepa Sierra Madre (Mexico)").
+const isCanada = (code) => /\(Canada\)$/.test((REGIONS.find((x) => x[0] === code) || [])[1] || '');
+function hsLine(name, code) {
+  const n = String(name || '').startsWith(code + ' ') ? name.slice(code.length + 1) : name || '';
+  const where = MX_REG.has(code) ? L('Mexico', 'México', 'México') : isCanada(code) ? L('Canada', 'Canadá', 'Canadá') : code;
+  const lbl = L('HS', 'Prepa', 'Escola');
+  return `${n.startsWith(lbl + ' ') ? '' : lbl + ': '}${n} (${where})`; // no "Prepa: Prepa Sierra Madre"
+}
 // Mexican prep football is real but small: no state or national powerhouses there, only regular school teams.
 const MX_REG = new Set(['CMX', 'MEX', 'NLE', 'JAL', 'PUE', 'CHH', 'COA', 'BCN', 'SON', 'QUE']);
 const MX_HS = ['Prepa Sierra Madre', 'Colegio Valle Alto', 'Prepa Lomas del Norte', 'Instituto Real del Bosque', 'Prepa Cerro Azul', 'Colegio Monte Verde'];
@@ -1116,8 +1124,10 @@ function statePowerhouses(code) {
 // Keep a default school name that fits the country (a name the player typed is never touched).
 function fitHsName() { const p = hsNamePool(CR.region); if ([...REG_NAMES, ...MX_HS].includes(CR.hsName) && !p.includes(CR.hsName)) CR.hsName = p[mrand(p.length)]; }
 function customRegular(code) {
-  const name = (CR.hsName || '').trim().slice(0, 28) || REG_NAMES[0];
-  return { id: 'my_hs', name, state: code, tier: 'Regular', color: JERSEY[avatar.jcol % JERSEY.length], abbr: abbrOf(name.replace(/\bHigh\b|\bSchool\b/g, '')) || 'HS', gen: true };
+  const base = (CR.hsName || '').trim().slice(0, 28) || REG_NAMES[0];
+  // tagged with the home code like the powerhouses ("TX Duncantown High"): "OH Westbrook High", "NLE Prepa Sierra Madre"
+  const name = base.startsWith(code + ' ') ? base : `${code} ${base}`;
+  return { id: 'my_hs', name, state: code, tier: 'Regular', color: JERSEY[avatar.jcol % JERSEY.length], abbr: abbrOf(base.replace(/\bHigh\b|\bSchool\b/g, '')) || 'HS', gen: true };
 }
 function registerSchools(list) { (list || []).forEach((s) => { const i = HIGH_SCHOOLS.findIndex((x) => x.id === s.id); if (i >= 0) HIGH_SCHOOLS.splice(i, 1); HIGH_SCHOOLS.push(s); }); }
 function assignSchool(regCode, mode) {
@@ -2234,7 +2244,7 @@ function addHallEntry(rookie) {
   G.honors.forEach((x) => { cnt[x.k] = (cnt[x.k] || 0) + 1; });
   const e = { id: G.seed + '|' + Date.now(), ts: Date.now(), name: G.name, num: G.num, pos: G.subPos, av: Object.assign({}, G.av),
     pro: !!H.pro, first: !!H.first, col: !!H.col, rookie: !!rookie, score: rookie ? Math.round(H.score * 100 + H.colScore * 30) : legacyScore(H), proScore: H.score, colScore: H.colScore,
-    peak: G.peakOvr, fame: G.fame, earn: grossEarn(), seed: G.seed, honors: cnt, region: G.region,
+    peak: G.peakOvr, fame: G.fame, earn: grossEarn(), seed: G.seed, honors: cnt, region: G.region, hs: hs() ? { n: hs().name, st: hs().state } : null,
     COL: H.col || (rookie && G.hist.some((h) => h.stage === 'COL')) ? levelSnap('COL') : null, PRO: H.pro || (rookie && G.hist.some((h) => h.stage === 'PRO')) ? levelSnap('PRO') : null };
   const all = (META.hall || []).filter((x) => x.ts && (rookie || !x.rookie)).concat([e]).sort((a, b) => b.score - a.score), perGroup = {};
   META.hall = all.filter((x, i) => { const g = posGroupOf(x.pos); perGroup[g] = (perGroup[g] || 0) + 1; return i < HALL_MAX || perGroup[g] <= 10; });
@@ -2267,7 +2277,7 @@ function hallCardHTML(e, rank) {
       <div class="hc-grid"><span>${L('Yrs', 'Años', 'Anos')}<b>${snap.yrs}</b></span><span>G<b>${snap.gp}</b></span><span>GS<b>${snap.gs}</b></span><span>W-L<b>${snap.w}-${snap.l}</b></span>${snap.cells.map(([k, v]) => `<span>${k}<b>${v}</b></span>`).join('')}</div></div>` : '';
   const H = e.honors || {}, badge = (n, t) => (n ? `<span class="tag y">${t}${n > 1 ? ' ×' + n : ''}</span>` : '');
   return `<div class="ph yh"><span>${ORD(rank)} · ${L('Legend Card', 'Tarjeta de Leyenda', 'Card de Lenda')}</span><span>${String(e.score).padStart(6, '0')}</span></div><div class="pb hallcard">
-    <div class="hc-top"><canvas data-hav="1" width="48" height="48"></canvas><div><b class="px">${esc(e.name)} #${e.num}</b><p>${e.pos} · ${L('Peak', 'Pico', 'Auge')} OVR ${e.peak} · ${L('Fame', 'Fama', 'Fama')} ${e.fame}</p>${e.region ? `<p class="d">${esc(regionName(e.region))}</p>` : ''}
+    <div class="hc-top"><canvas data-hav="1" width="48" height="48"></canvas><div><b class="px">${esc(e.name)} #${e.num}</b><p>${e.pos} · ${L('Peak', 'Pico', 'Auge')} OVR ${e.peak} · ${L('Fame', 'Fama', 'Fama')} ${e.fame}</p>${e.region ? `<p class="d">${esc(e.hs ? hsLine(e.hs.n, e.hs.st) : regionName(e.region))}</p>` : ''}
       <p class="y">${e.pro ? (e.first ? L('PRO HOF · FIRST BALLOT', 'HOF PRO · PRIMERA BOLETA', 'HOF PRO · PRIMEIRA VOTAÇÃO') : L('PRO HALL OF FAME', 'SALÓN DE LA FAMA PRO', 'HALL DA FAMA PRO')) : ''}${e.pro && e.col ? ' + ' : ''}${e.col ? L('COLLEGE HOF', 'HOF UNIVERSITARIO', 'HOF UNIVERSITÁRIO') : ''}</p>
       ${e.rookie ? `<p class="d">${L('First career · not in the Hall of Fame yet', 'Primera carrera · aún no está en el Salón de la Fama', 'Primeira carreira · ainda não está no Hall da Fama')}</p>` : ''}<p class="d">${e.rookie ? L('Retired', 'Retirado', 'Aposentado') : L('Inducted', 'Exaltado', 'Eleito')} ${fmtTs(e.ts)}</p></div></div>
     <div class="hc-badges">${badge(H.mvp, 'MVP')}${badge(H.dpoy, 'DPOY')}${badge(H.allpro, 'AL-1')}${badge(H.allpro2, 'AL-2')}${badge(H.allstar, 'AS')}${badge(H.league, L('Champ', 'Campeón', 'Campeão'))}${badge(H.helmet, 'POY')}${badge(H.allam, 'AA')}${badge(H.natcol, L('Nat. Champ', 'Camp. Nac.', 'Camp. Nac.'))}</div>
@@ -3182,7 +3192,7 @@ function careerPNG() {
   c.imageSmoothingEnabled = false; c.drawImage(av, 34, 34, 168, 168); c.strokeStyle = '#000'; c.lineWidth = 4; c.strokeRect(34, 34, 168, 168);
   c.fillStyle = '#ffd23f'; c.font = `22px ${f1}`; c.fillText('GRIDIRON LIFE', 228, 62);
   c.fillStyle = '#fbfaf2'; { const t = `${G.name} #${G.num} ${G.subPos}`; let fs = 18; c.font = `${fs}px ${f1}`; while (fs > 9 && c.measureText(t).width > W - 260) { fs--; c.font = `${fs}px ${f1}`; } c.fillText(t, 228, 98); }
-  c.font = `24px ${f2}`; c.fillStyle = '#7f8ab3'; c.fillText(regionName(G.region), 228, 128);
+  { const t = hs() ? hsLine(hs().name, hs().state) : regionName(G.region); let fs = 24; c.font = `${fs}px ${f2}`; while (fs > 16 && c.measureText(t).width > W - 260) { fs--; c.font = `${fs}px ${f2}`; } c.fillStyle = '#7f8ab3'; c.fillText(t, 228, 128); }
   c.font = `28px ${f2}`; c.fillStyle = '#a7b1d4';
   c.fillText(`${L('Peak', 'Pico', 'Auge')} OVR ${G.peakOvr} · ${L('Peak stars', 'Estrellas', 'Estrelas')} ${G.peakStars}★ · ${L('Fame', 'Fama', 'Fama')} ${G.fame}`, 228, 156);
   c.fillText(`${L('Earnings', 'Ganancias', 'Ganhos')} ${money(grossEarn())} · ${G.proId ? proT(G.proId).name : G.colId ? col().name : hs().name}`, 228, 184);
@@ -3569,6 +3579,7 @@ if (!DEV_HOST) window.GridironLife = { setBgm: (url) => BGM.set(url) }; // relea
     CR.seed = params.get('seed') || 'qa-seed';
     const sub = params.get('pos');
     if (sub) { const pg = Object.keys(POS_GROUPS).find((k) => POS_GROUPS[k].subs.includes(sub)); if (pg) { CR.pg = pg; CR.sub = sub; } }
+    if (REGIONS.some((r) => r[0] === params.get('region'))) { CR.region = params.get('region'); fitHsName(); }
     startCareer();
   }
 })();
