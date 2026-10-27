@@ -1628,6 +1628,10 @@ function playGame(quiet) {
   if (!out) {
     // m = playing time × rating-driven quality (≈0.9 for a typical starter, ≈1.1 for a star-level rating).
     const snaps = SNAPS[G.role], q = prodQ(), m = 0.9 * snaps * (1 + 0.4 * Math.max(-0.5, q)), gs = gameStats(m, snaps, q, { pts: g.us, close });
+    // The scoreboard can't be lower than the points this player put on it (ratings drive production; the score bends to it).
+    // A loss stays a loss: if the bump catches the opponent, their score rises too.
+    const d = gs.d, mine = (d.fgm || 0) * 3 + (d.xpa || 0) * 6 + (d.xp || 0) + ((d.ptd || 0) + (d.rtd || 0) + (d.rectd || 0)) * 6;
+    if (mine > g.us) { g.us = mine; if (!win && g.us >= g.them) g.them = g.us + ri(1, 7); }
     // Close wins that came down to the final drive: QB gets a game-winning drive (often a 4th-quarter comeback), K a game-winning FG.
     const margin = g.us - g.them;
     if (win && margin <= 8 && STARTS(G.role)) {
