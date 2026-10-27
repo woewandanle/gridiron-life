@@ -1698,6 +1698,7 @@ const STARTERS = { QB: 1, RB: 1, WR: 3, TE: 1, OT: 2, OL: 3, DE: 2, DT: 2, DL: 2
 const PRO_MEAN = 65.2; // league-wide starter level after position normalization
 const POS_BASE = { QB: 64.7, RB: 58.9, WR: 60.6, TE: 60.3, CB: 57.0, S: 60.35, LB: 59.75, DE: 60.15, DL: 59.25, DT: 61.4, OL: 63.2, OT: 62.2, K: 64.0 };
 const COL_FIX = { QB: 2.3, RB: -2.3, WR: -2.5, TE: -2, LB: -2.6, DE: -2.6, DL: 1.7, DT: 1.7, CB: -0.6, S: 0.4, OT: 1, OL: 1.6, K: 1.7 };
+const DPOY_W = { DE: 55, DT: 40, DL: 40, LB: 40, CB: 30, S: 30 };
 function Phi(z) { const t = 1 / (1 + 0.2316419 * Math.abs(z)), d = 0.3989423 * Math.exp(-z * z / 2), q = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274)))); return z > 0 ? 1 - q : q; }
 function rankOf(score, mean, teams) { const n = (STARTERS[G.subPos] || 1) * teams; return Math.max(1, 1 + Math.floor((1 - Phi((score - mean) / 3.2)) * n + rf(-0.5, 0.5))); }
 function awardsVoting(S, o) {
@@ -1708,7 +1709,15 @@ function awardsVoting(S, o) {
     V.asg.sel = V.asg.rank <= V.asg.slots;
     const m = rankOf(perf + rf(-0.8, 0.8), PRO_MEAN, 32), s = ALL_SLOTS[pos];
     V.al = { slots: s, rank: m, team: m <= s ? 1 : m <= 2 * s ? 2 : 0 };
-    V.mvp = V.al.team === 1 && m === 1 && V.win && chance(pos === 'QB' ? 45 : ['RB', 'WR'].includes(pos) ? 8 : 3);
+    // Safeties' value hides outside the box score, so writers lean on reputation: an All-Star safety who missed
+    // the All-League cut on numbers can still be voted onto a team.
+    if (pos === 'S' && V.asg.sel && !V.al.team) { if (chance(10)) V.al.team = 1; else if (chance(28)) V.al.team = 2; } // DPOY still needs rank 1 (m === 1)
+    // MVPs come from near-elite regular seasons: since 2000 the winner's team almost always went 12+ wins (≈70% of 17 games).
+    const rw = S.games.slice(0, S.reg).filter((g) => g.win).length;
+    V.mvp = V.al.team === 1 && m === 1 && rw >= Math.ceil(S.reg * 0.7) && chance(pos === 'QB' ? 45 : ['RB', 'WR'].includes(pos) ? 8 : 3);
+    // Defensive Player of the Year: the best defender in the league, team record barely matters (J.J. Watt won on losing teams).
+    // Edge rushers win it most often, then interior DL / LB, then DBs.
+    V.dpoy = !!DPOY_W[pos] && V.al.team === 1 && m === 1 && chance(DPOY_W[pos]);
   } else if (G.stage === 'COL') {
     // POS_BASE is tuned on pro OVR spreads; COL_FIX re-levels the positions on college seasons (measured on 600+ college starters),
     // so a college 60-62 makes 1st Team All-Conference ~3 in 4 seasons and All-American ~1 in 4, at every position.
@@ -1788,6 +1797,7 @@ function finishSeason() {
     if (V.al.team === 1) { honor('allpro', `${G.year} All-League First Team`, `${G.year} Primer Equipo de la Liga`, `${G.year} 1º Time da Liga`); fa += 25; }
     else if (V.al.team === 2) { honor('allpro2', `${G.year} All-League Second Team`, `${G.year} Segundo Equipo de la Liga`, `${G.year} 2º Time da Liga`); fa += 12; }
     if (V.mvp) { honor('mvp', `${G.year} League MVP`, `${G.year} MVP de la Liga`, `${G.year} MVP da Liga`); fa += 60; }
+    if (V.dpoy) { honor('dpoy', `${G.year} Defensive Player of the Year`, `${G.year} Jugador Defensivo del Año`, `${G.year} Jogador Defensivo do Ano`); fa += 40; }
     G.fame += fa;
     if (G.age >= decAge(G.subPos) - 1 && (G.ageless || 0) < AGELESS_MAX) {
       const g = Math.min(AGELESS_MAX - (G.ageless || 0), 2, (V.mvp ? 2 : 0) + (S.champ ? 1 : 0) + (V.al.team === 1 ? 1 : 0));
@@ -2238,7 +2248,7 @@ function hallCardHTML(e, rank) {
     <div class="hc-top"><canvas data-hav="1" width="48" height="48"></canvas><div><b class="px">${esc(e.name)} #${e.num}</b><p>${e.pos} · ${L('Peak', 'Pico', 'Auge')} OVR ${e.peak} · ${L('Fame', 'Fama', 'Fama')} ${e.fame}</p>
       <p class="y">${e.pro ? (e.first ? L('PRO HOF · FIRST BALLOT', 'HOF PRO · PRIMERA BOLETA', 'HOF PRO · PRIMEIRA VOTAÇÃO') : L('PRO HALL OF FAME', 'SALÓN DE LA FAMA PRO', 'HALL DA FAMA PRO')) : ''}${e.pro && e.col ? ' + ' : ''}${e.col ? L('COLLEGE HOF', 'HOF UNIVERSITARIO', 'HOF UNIVERSITÁRIO') : ''}</p>
       ${e.rookie ? `<p class="d">${L('First career · not in the Hall of Fame yet', 'Primera carrera · aún no está en el Salón de la Fama', 'Primeira carreira · ainda não está no Hall da Fama')}</p>` : ''}<p class="d">${e.rookie ? L('Retired', 'Retirado', 'Aposentado') : L('Inducted', 'Exaltado', 'Eleito')} ${fmtTs(e.ts)}</p></div></div>
-    <div class="hc-badges">${badge(H.mvp, 'MVP')}${badge(H.allpro, 'AL-1')}${badge(H.allpro2, 'AL-2')}${badge(H.allstar, 'AS')}${badge(H.league, L('Champ', 'Campeón', 'Campeão'))}${badge(H.helmet, 'POY')}${badge(H.allam, 'AA')}${badge(H.natcol, L('Nat. Champ', 'Camp. Nac.', 'Camp. Nac.'))}</div>
+    <div class="hc-badges">${badge(H.mvp, 'MVP')}${badge(H.dpoy, 'DPOY')}${badge(H.allpro, 'AL-1')}${badge(H.allpro2, 'AL-2')}${badge(H.allstar, 'AS')}${badge(H.league, L('Champ', 'Campeón', 'Campeão'))}${badge(H.helmet, 'POY')}${badge(H.allam, 'AA')}${badge(H.natcol, L('Nat. Champ', 'Camp. Nac.', 'Camp. Nac.'))}</div>
     ${lvl(e.PRO, L('Pro career', 'Carrera profesional', 'Carreira profissional'))}${lvl(e.COL, L('College career', 'Carrera universitaria', 'Carreira universitária'))}
     <p class="d mt">${L('Career earnings', 'Ganancias', 'Ganhos')} ${money(e.earn)}</p>
     <div class="seedbox"><span class="lbl" style="margin:0">SEED</span><input id="hc-seed" class="inp selectable" readonly value="${esc(e.seed)}" onclick="this.select()"><button class="btn" data-act="copySeed" data-v="${esc(e.seed)}">${L('Copy', 'Copiar', 'Copiar')}</button></div>
@@ -2278,7 +2288,7 @@ function ringScore() {
 function hofCalc() {
   const proSeasons = G.hist.filter((h) => h.stage === 'PRO'), starts = proSeasons.reduce((s, h) => s + (STARTS(h.role) ? 1 : h.role === 'Situational' ? 0.5 : 0), 0);
   const colScore = hcount('allam') * 25 + hcount('helmet') * 45 + hcount('natcol') * 20 + hcount('allconf') * 6 + hcount('allconf2') * 3 + (G.colFame || 0) * 0.15;
-  const proScore = hcount('allpro') * 14 + hcount('allpro2') * 6 + hcount('allstar') * 5 + hcount('mvp') * 20 + ringScore() + 30 * (1 - Math.exp(-starts / 12)) + Math.max(0, G.peakOvr - 64) * 3 + 45 * (1 - Math.exp(-statUnits() / 15)) + milestonePts() + clamp((G.pc.gwd || 0) * 0.5 + (G.pc.gwfg || 0) * 0.8, 0, 15); // clutch legacy
+  const proScore = hcount('allpro') * 14 + hcount('allpro2') * 6 + hcount('allstar') * 5 + hcount('mvp') * 20 + hcount('dpoy') * 12 + ringScore() + 30 * (1 - Math.exp(-starts / 12)) + Math.max(0, G.peakOvr - 64) * 3 + 45 * (1 - Math.exp(-statUnits() / 15)) + milestonePts() + clamp((G.pc.gwd || 0) * 0.5 + (G.pc.gwfg || 0) * 0.8, 0, 15); // clutch legacy
   return { col: colScore >= 60, pro: proSeasons.length >= 5 && proScore >= HOF_BAR, first: proScore >= HOF_FIRST, score: Math.round(proScore), colScore: Math.round(colScore), seasons: proSeasons.length };
 }
 function retire() {
@@ -2416,7 +2426,7 @@ function renderAll() {
 const HON_SHORT = {
   league: B('🏆 League Champ', '🏆 Campeón', '🏆 Campeão'), natcol: B('🏆 Nat. Champ', '🏆 Campeón Nac.', '🏆 Campeão Nac.'),
   natprep: B('🏆 Prep Champ', '🏆 Campeón Prep', '🏆 Campeão Prep'), state: B('🏆 State Champ', '🏆 Campeón Estatal', '🏆 Campeão Estadual'),
-  mvp: B('⭐ MVP', '⭐ MVP', '⭐ MVP'), helmet: B('⭐ Golden Helmet', '⭐ Casco de Oro', '⭐ Capacete de Ouro'),
+  mvp: B('⭐ MVP', '⭐ MVP', '⭐ MVP'), dpoy: B('⭐ DPOY', '⭐ DPOY', '⭐ DPOY'), helmet: B('⭐ Golden Helmet', '⭐ Casco de Oro', '⭐ Capacete de Ouro'),
   allpro: B('All-League 1st', 'Liga 1.º Eq.', 'Liga 1º Time'), allpro2: B('All-League 2nd', 'Liga 2.º Eq.', 'Liga 2º Time'), allstar: B('All-Star', 'All-Star', 'All-Star'),
   allam: B('All-American', 'All-American', 'All-American'), allconf: B('All-Conf 1st', 'Conf. 1.º Eq.', 'Conf. 1º Time'), allconf2: B('All-Conf 2nd', 'Conf. 2.º Eq.', 'Conf. 2º Time'),
   allstate: B('All-State', 'Sel. Estatal', 'Sel. Estadual'),
@@ -2443,7 +2453,7 @@ function hudSeason() {
   const TITLE = /^(state|natprep|natcol|league|confcol|confpro)$/;
   const keys = live ? [S.stateChamp && 'state', S.champ === 'hs_nat' && 'natprep', S.confChamp && (G.stage === 'PRO' ? 'confpro' : 'confcol'), S.champ === 'cfpf' && 'natcol', S.champ === 'big' && 'league'].filter(Boolean) : [];
   G.honors.forEach((x) => { if (x.y === y && HON_SHORT[x.k] && !(live && TITLE.test(x.k)) && !keys.includes(x.k)) keys.push(x.k); });
-  const hon = keys.map((k) => `<span class="h-hon${/^conf/.test(k) ? ' silver' : TITLE.test(k) || k === 'mvp' || k === 'helmet' ? ' gold' : ''}">${tx(HON_SHORT[k])}</span>`).join('');
+  const hon = keys.map((k) => `<span class="h-hon${/^conf/.test(k) ? ' silver' : TITLE.test(k) || k === 'mvp' || k === 'dpoy' || k === 'helmet' ? ' gold' : ''}">${tx(HON_SHORT[k])}</span>`).join('');
   const champ = '';
   return `<div class="h-season"><span class="h-yr">${live ? y : L(`${y} final`, `${y} final`, `${y} final`)}</span><b>${rec}</b>${out}<span class="h-st">${hudStats(st)}</span>${champ}${hon}</div>`;
 }
@@ -2576,6 +2586,7 @@ function votesPanel(V) {
     const t = V.al;
     html += box(L('All-League team · media vote', 'Equipo de la Liga · voto de prensa', 'Seleção da Liga · voto da imprensa'), tag(t.team > 0, t.team === 1 ? L('1ST TEAM', '1.ER EQUIPO', '1º TIME') : L('2ND TEAM', '2.º EQUIPO', '2º TIME'), L('NOT SELECTED', 'NO ELEGIDO', 'NÃO ELEITO')),
       `<div class="vb"><span>${pos}${rk(t.rank, t.team > 0)}</span><span>${L('1st team', '1.er equipo', '1º time')}<b>${t.slots}</b></span><span>${L('2nd team', '2.º equipo', '2º time')}<b>${t.slots}</b></span></div>`, '');
+    if (V.dpoy) html += box('DPOY', tag(true, 'DPOY', ''), '', L('Defensive Player of the Year: the best defender in the league.', 'Jugador Defensivo del Año: el mejor defensor de la liga.', 'Jogador Defensivo do Ano: o melhor defensor da liga.'));
     if (V.mvp) html += box('MVP', tag(true, 'MVP', ''), '', L('Best player on a winning team — the classic MVP profile.', 'El mejor jugador de un equipo ganador: el perfil clásico de MVP.', 'O melhor jogador de um time vencedor: o perfil clássico de MVP.'));
   } else {
     const c = V.conf, a = V.aa;
@@ -3034,10 +3045,10 @@ const STAT_HELP = {
   '4QC': B('4th-quarter comebacks', 'remontadas en el 4.º cuarto', 'viradas no 4º quarto'), GWD: B('game-winning drives', 'series ganadoras', 'campanhas da vitória'), 'GW FG': B('game-winning field goals', 'goles de campo ganadores', 'field goals da vitória'),
   'FG%': B('field goal %', '% de goles de campo', '% de field goals'), Lng: B('longest field goal', 'gol de campo más largo', 'field goal mais longo'), XPM: B('extra points made (the 1-point kick after a touchdown)', 'puntos extra anotados (la patada de 1 punto tras un touchdown)', 'pontos extras convertidos (o chute de 1 ponto após um touchdown)')
 };
-const AWARD_CODE = { natprep: 'NatCh', state: 'StCh', allstate: 'AllSt', natcol: 'NatCh', allconf: 'AllConf', allconf2: 'AllConf2', allam: 'AA', helmet: 'POY', league: 'Champ', confpro: 'ConfCh', confcol: 'ConfCh', allstar: 'AS', allpro: 'AL-1', allpro2: 'AL-2', mvp: 'MVP' };
+const AWARD_CODE = { natprep: 'NatCh', state: 'StCh', allstate: 'AllSt', natcol: 'NatCh', allconf: 'AllConf', allconf2: 'AllConf2', allam: 'AA', helmet: 'POY', league: 'Champ', confpro: 'ConfCh', confcol: 'ConfCh', allstar: 'AS', allpro: 'AL-1', allpro2: 'AL-2', mvp: 'MVP', dpoy: 'DPOY' };
 const AWARD_HELP = [['StCh', B('state champion', 'campeón estatal', 'campeão estadual')], ['ConfCh', B('conference champion', 'campeón de conferencia', 'campeão de conferência')], ['NatCh', B('national champion', 'campeón nacional', 'campeão nacional')], ['AllSt', B('All-State', 'Selección Estatal', 'Seleção Estadual')], ['AllConf', B('All-Conference 1st team', 'Primer equipo de conferencia', '1º time da conferência')], ['AllConf2', B('All-Conference 2nd team', 'Segundo equipo de conferencia', '2º time da conferência')],
   ['AA', B('All-American', 'All-American', 'All-American')], ['POY', B('Golden Helmet (College Player of the Year)', 'Casco de Oro (Jugador Universitario del Año)', 'Capacete de Ouro (Jogador Universitário do Ano)')], ['AS', B('All-Star (88 per year)', 'All-Star (88 por año)', 'All-Star (88 por ano)')],
-  ['AL-1', B('All-League 1st team', 'Primer equipo de la Liga', '1º time da Liga')], ['AL-2', B('All-League 2nd team', 'Segundo equipo de la Liga', '2º time da Liga')], ['MVP', B('league MVP', 'MVP de la liga', 'MVP da liga')], ['Champ', B('league champion', 'campeón de liga', 'campeão da liga')]];
+  ['AL-1', B('All-League 1st team', 'Primer equipo de la Liga', '1º time da Liga')], ['AL-2', B('All-League 2nd team', 'Segundo equipo de la Liga', '2º time da Liga')], ['MVP', B('league MVP', 'MVP de la liga', 'MVP da liga')], ['DPOY', B('Defensive Player of the Year', 'Jugador Defensivo del Año', 'Jogador Defensivo do Ano')], ['Champ', B('league champion', 'campeón de liga', 'campeão da liga')]];
 function statCell(st, k) {
   const s = (x) => st[x] || 0, f1 = (a, b) => (b ? (a / b).toFixed(1) : '0.0');
   switch (k) {
@@ -3070,7 +3081,7 @@ const PIX = {
 };
 const SILVER = { Y: 'S', O: 's' }, BRONZE = { Y: 'C', O: 'c' };
 // [shape, recolor]
-const HONOR_ICON = { mile: ['star', SILVER], league: ['ring'], mvp: ['crown'], allpro: ['medal'], allpro2: ['medal', SILVER], allstar: ['star'], helmet: ['helmet'], allam: ['shield'],
+const HONOR_ICON = { mile: ['star', SILVER], league: ['ring'], mvp: ['crown'], dpoy: ['crown', SILVER], allpro: ['medal'], allpro2: ['medal', SILVER], allstar: ['star'], helmet: ['helmet'], allam: ['shield'],
   natcol: ['cup'], natprep: ['cup'], state: ['cup'], confpro: ['cup', SILVER], confcol: ['cup', SILVER], allconf: ['medal'], allconf2: ['medal', SILVER], allstate: ['medal', BRONZE] };
 function pixGrid(k) { const [shape, map] = HONOR_ICON[k] || ['star']; return PIX[shape].map((row) => [...row].map((ch) => (map && map[ch]) || ch)); }
 function pixSVG(k, px) {
@@ -3079,7 +3090,7 @@ function pixSVG(k, px) {
 }
 function pixDraw(c, k, x0, y0, sc) { pixGrid(k).forEach((row, y) => row.forEach((ch, x) => { if (ch !== '.') { c.fillStyle = PIX_PAL[ch]; c.fillRect(x0 + x * sc, y0 + y * sc, sc, sc); } })); }
 const HONOR_ORDER = [
-  ['league', B('League Champion', 'Campeón de Liga', 'Campeão da Liga'), '💍'], ['mvp', B('League MVP', 'MVP de la Liga', 'MVP da Liga'), '👑'], ['allpro', B('All-League 1st Team', 'Primer Equipo de la Liga', '1º Time da Liga'), '🥇'],
+  ['league', B('League Champion', 'Campeón de Liga', 'Campeão da Liga'), '💍'], ['mvp', B('League MVP', 'MVP de la Liga', 'MVP da Liga'), '👑'], ['dpoy', B('Defensive Player of the Year', 'Jugador Defensivo del Año', 'Jogador Defensivo do Ano'), '🛡️'], ['allpro', B('All-League 1st Team', 'Primer Equipo de la Liga', '1º Time da Liga'), '🥇'],
   ['allpro2', B('All-League 2nd Team', 'Segundo Equipo de la Liga', '2º Time da Liga'), '🥈'], ['confpro', B('Conference Champion', 'Campeón de Conferencia', 'Campeão de Conferência'), '🏆'], ['allstar', B('All-Star', 'All-Star', 'All-Star'), '⭐'], ['helmet', B('Golden Helmet (College Player of the Year)', 'Casco de Oro (Jugador Universitario del Año)', 'Capacete de Ouro (Jogador Universitário do Ano)'), '🏈'],
   ['natcol', B('College National Champion', 'Campeón Nacional Universitario', 'Campeão Nacional Universitário'), '🏆'], ['confcol', B('College Conference Champion', 'Campeón de Conferencia Universitario', 'Campeão de Conferência Universitário'), '🏆'], ['allam', B('All-American', 'All-American', 'All-American'), '🎖'], ['allconf', B('All-Conference 1st Team', 'Primer Equipo de Conferencia', '1º Time da Conferência'), '🏅'],
   ['allconf2', B('All-Conference 2nd Team', 'Segundo Equipo de Conferencia', '2º Time da Conferência'), '🏅'], ['natprep', B('National Prep Champion', 'Campeón Nacional Prep', 'Campeão Nacional Prep'), '🏆'], ['state', B('State Champion', 'Campeón Estatal', 'Campeão Estadual'), '🏆'],
@@ -3461,7 +3472,7 @@ window.GridironLife = { colleges: () => COLLEGES,
   setStrategy: (s) => { STRAT = s || null; },
   setEvStrategy: (m) => { EV_STRAT = m || null; },
   _si: (st, n) => statIndex(st, n), _q: () => prodQ(),
-  _hof: () => ({ units: statUnits(), mile: milestonePts(), ring: ringScore(), peak: G.peakOvr, aw: hcount('allpro') * 14 + hcount('allpro2') * 6 + hcount('allstar') * 5 + hcount('mvp') * 20, seasons: G.hist.filter((h) => h.stage === 'PRO').length }),
+  _hof: () => ({ units: statUnits(), mile: milestonePts(), ring: ringScore(), peak: G.peakOvr, aw: hcount('allpro') * 14 + hcount('allpro2') * 6 + hcount('allstar') * 5 + hcount('mvp') * 20 + hcount('dpoy') * 12, seasons: G.hist.filter((h) => h.stage === 'PRO').length }),
   meta: () => META,
   _draw: (cv, cfg) => drawAvatar(cv, cfg), _fun: () => funName(),
   state: () => G,
