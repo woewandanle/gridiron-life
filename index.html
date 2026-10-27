@@ -1832,7 +1832,9 @@ function buildOffseason() {
     if (G.stageYr >= 3) q.push('draftDecision'); else q.push('portal', 'nil');
   } else if (G.stage === 'PRO') {
     const c = G.contract;
-    if (G.age + 1 >= retireAge()) q.push(G.idleYears ? 'retireForced' : 'noCalls'); // the phone stops ringing first, then the end
+    const still = ovr() >= roleThresholds().start;   // still starter-level?
+    if (G.age + 1 >= retireAge()) q.push(still ? 'retireTop' : G.idleYears ? 'retireForced' : 'noCalls'); // stars walk away on top; fading vets go unsigned first
+    else if (still && G.age + 1 >= retireAge() - 2 && chance({ RB: 16, WR: 12, CB: 12, S: 12, K: 4 }[G.subPos] || 9)) q.push('careerInjury'); // rare, only in the final stretch
     else {
       if (G.age >= 31 && (c.yearsLeft === 0 || G.age >= 34)) q.push('retireAsk');
       if (c.type === 'rookie' && c.round === 1 && c.yearsLeft === 1 && c.optionSal == null) q.push('option');
@@ -1972,6 +1974,8 @@ function buildStep(type) {
       return { type: 'tradeAsk', why: losing ? 'losing' : 'snaps' };
     }
     case 'noCalls': return info(B('The Phone Stops Ringing', 'El Teléfono Deja de Sonar', 'O Telefone Para de Tocar'), B(`At ${G.age + 1}, no team offers you a contract. You'll sit out the season as a free agent and hope for one more call.`, `A los ${G.age + 1} años, ningún equipo te ofrece contrato. Pasarás la temporada como agente libre esperando una última llamada.`, `Aos ${G.age + 1} anos, nenhum time oferece contrato. Você vai passar a temporada como agente livre esperando uma última ligação.`), 'bad', 'idle');
+    case 'retireTop': return info(B('Going Out on Top', 'Retirada en la Cima', 'Saindo por Cima'), B(`At ${G.age + 1}, teams still want you — but your body has given everything it had. You retire as a starter, on your own terms.`, `A los ${G.age + 1} años los equipos aún te quieren, pero tu cuerpo ya lo dio todo. Te retiras como titular, a tu manera.`, `Aos ${G.age + 1} anos os times ainda te querem, mas seu corpo já deu tudo. Você se aposenta como titular, do seu jeito.`), 'gold', 'retire');
+    case 'careerInjury': return { type: 'retireAsk', injury: true };
     case 'retireAsk': return { type };
     case 'retireForced': return info(B('End of the Road', 'Fin del Camino', 'Fim da Linha'), B(`At ${G.age + 1}, your body says it's time. Your career is over.`, `A los ${G.age + 1} años, tu cuerpo dice que es hora. Tu carrera terminó.`, `Aos ${G.age + 1} anos, seu corpo diz que chegou a hora. Sua carreira acabou.`), 'gold', 'retire');
   }
@@ -2672,6 +2676,9 @@ function viewOff() {
         <div class="row mt"><button class="btn ob big" data-act="tradeReq">${L('Request trade', 'Pedir cambio', 'Pedir troca')}<small>${L('≈55% granted', '≈55% aceptado', '≈55% aceito')}</small></button><button class="btn big" data-act="ok">${L('Stay and compete', 'Quedarme y competir', 'Ficar e competir')}</button></div>`);
     case 'fa': return viewFA();
     case 'retireAsk':
+      if (O.injury) return P(L('Career-Threatening Injury', 'Lesión que Amenaza tu Carrera', 'Lesão que Ameaça a Carreira'),
+        `<p>${L(`A torn tendon in the season finale. At ${G.age}, doctors say you can come back — but you won't be the same athlete.`, `Un tendón roto en el último partido. A los ${G.age}, los médicos dicen que puedes volver, pero no serás el mismo atleta.`, `Um tendão rompido no último jogo. Aos ${G.age}, os médicos dizem que você pode voltar, mas não será o mesmo atleta.`)}</p>
+        <p class="r">${L('Comeback: Speed, Burst, Agility and Power drop sharply.', 'Regreso: Velocidad, Explosividad, Agilidad y Potencia bajan mucho.', 'Retorno: Velocidade, Explosão, Agilidade e Força caem muito.')}</p><div class="row mt"><button class="btn yb big" data-act="comeback">${L('Attempt a comeback', 'Intentar regresar', 'Tentar voltar')}</button><button class="btn rb big" data-act="retire">${L('Retire', 'Retirarme', 'Me aposentar')}</button></div>`);
       return P(L('Keep Playing?', '¿Seguir Jugando?', 'Continuar Jogando?'),
         `<p>${L(`You're ${G.age}. Your body is sore, but the fire is still there.`, `Tienes ${G.age} años. El cuerpo duele, pero el fuego sigue.`, `Você tem ${G.age} anos. O corpo dói, mas a chama continua.`)}</p><div class="row mt"><button class="btn yb big" data-act="continueCareer">${L('One more year', 'Un año más', 'Mais um ano')}</button><button class="btn rb big" data-act="retire">${L('Retire', 'Retirarme', 'Me aposentar')}</button></div>`);
   }
@@ -3362,6 +3369,11 @@ const ACT = {
   faWait: () => faWait(),
   retire: () => retire(),
   continueCareer: () => nextOff(),
+  comeback: () => {
+    ['spd', 'brs', 'agi', 'pow'].forEach((k) => { const d = G.subPos === 'K' ? 2 : ri(4, 7); G.ab[k] = clamp(G.ab[k] - d, 20, 80); G.pot[k] = clamp(G.pot[k] - d, 20, 80); });
+    addFeed('bad', B('Long Road Back', 'Largo Camino de Regreso', 'Longo Caminho de Volta'), B('You chose to fight back from the injury. The explosiveness is gone; the will is not.', 'Elegiste luchar contra la lesión. La explosividad se fue; la voluntad no.', 'Você escolheu lutar contra a lesão. A explosão se foi; a vontade não.'));
+    nextOff();
+  },
   png: () => {
     const url = careerPNG();
     openModal(`<div class="ph yh"><span>${L('Career Card', 'Tarjeta de Carrera', 'Card da Carreira')}</span></div><div class="pb"><img src="${url}" alt="career card" style="width:100%;border:3px solid #000"><p class="hint">${L('Long-press / right-click to save, or use the button.', 'Mantén presionado o clic derecho para guardar, o usa el botón.', 'Segure ou clique com o botão direito para salvar, ou use o botão.')}</p>
@@ -3458,7 +3470,7 @@ window.GridironLife = {
             case 'tradeAsk': if (n % 2) ACT.tradeReq(); else ACT.ok(); break;
             case 'neg': if (n % 3 === 2 && O.kind === 'resign') ACT.testFA(); else if (n % 2) { ACT.askAdj({ v: 2 }); ACT.submitAsk(); } else ACT.acceptOffer(); break;
             case 'fa': if (O.offers.length && O.day >= 2) ACT.faAccept({ i: 0 }); else if (O.offers.length > 1 && !O.lev) ACT.faLev({ i: 0 }); else if (O.day < 5) ACT.faWait(); else if (!G.idleYears) ACT.faIdle(); else ACT.retire(); break;
-            case 'retireAsk': if (ovr() < 58) ACT.retire(); else ACT.continueCareer(); break;
+            case 'retireAsk': if (O.injury) { if (n % 2) ACT.comeback(); else ACT.retire(); } else if (ovr() < 58) ACT.retire(); else ACT.continueCareer(); break;
             default: return false;
           }
           return true;
