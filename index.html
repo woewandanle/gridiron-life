@@ -1109,7 +1109,9 @@ const nilValue = (f) => Math.round(3 * Math.pow(Math.max(0, f), 1.1));
 const endorseValue = (f) => Math.round(4 * Math.pow(Math.max(0, f), 1.15));
 // vets past the decline age get less guaranteed (5 points per year, floor 10%)
 const gtdAge = (g) => Math.max(0.1, g - Math.max(0, G.age + 1 - decAge(G.subPos) + 1) * 0.05);
-const prefYears = () => (G.age <= 26 ? 5 : G.age <= 28 ? 4 : G.age <= 30 ? 3 : G.age <= 32 ? 2 : 1);
+// Contract length follows each position's aging curve, not the calendar: a 33-year-old QB or K still signs multi-year
+// deals (Brady, Tucker), a 27-year-old RB is already looking at short ones. Years of prime left before the decline age:
+const prefYears = () => { const left = decAge(G.subPos) - (G.age + 1); return left >= 6 ? 5 : left >= 4 ? 4 : left >= 2 ? 3 : left >= 0 ? 2 : 1; };
 const agent = () => AGENTS.find((a) => a.id === G.agent) || AGENTS[0];
 
 function payMoney(kind, amt, feeable) {
@@ -1430,7 +1432,10 @@ function resolveEvent(m) {
 function impactOnTeam() {
   if (!STARTS(G.role)) return G.role === 'Situational' ? (G.stage === 'PRO' ? 1 : 2) : 0;
   const q = prodQ(), [b, k] = G.stage !== 'PRO' ? [5, 9] : G.subPos === 'QB' ? [4.5, 8] : [2.4, 6];
-  return Math.max(1, b + k * q);
+  // High school: a prospect far above his school's level carries it — every OVR point past the school's star line
+  // adds team strength (a 5-star at a regular school can drag it to a state title; a national powerhouse is harder).
+  const carry = G.stage === 'HS' ? clamp(((ovr() + skill()) / 2 - roleThresholds().star) * 1.3, 0, 20) : 0;
+  return Math.max(1, b + k * q) + carry;
 }
 function teamBase() {
   if (G.stage === 'HS') return { Regular: 46, State_Powerhouse: 63, National_Powerhouse: 76 }[hs().tier];
@@ -1438,12 +1443,21 @@ function teamBase() {
   return tstate(G.proId).r;
 }
 function oppBase() {
-  if (G.stage === 'HS') return { Regular: 46, State_Powerhouse: 54, National_Powerhouse: 62 }[hs().tier];
+  if (G.stage === 'HS') return { Regular: 46, State_Powerhouse: 52, National_Powerhouse: 54 }[hs().tier]; // a national powerhouse loses about once in two seasons
   if (G.stage === 'COL') return 64;
   return 62;
 }
 function abbrOf(name) { return name.replace(/[^A-Za-z ]/g, '').split(' ').filter(Boolean).map((w) => w[0]).join('').slice(0, 3).toUpperCase(); }
-function makeOpp(post, round) {
+// High-school playoffs: a fixed in-state ladder per school tier (no longer "always stronger than you"). A national
+// powerhouse steamrolls its state whatever your role (~9 in 10 titles) — unless the state has two of them (CA, FL),
+// where the title game is the rival national powerhouse, a coin flip that your play tilts. State powerhouses share
+// the state with peers (~half) — but in a state with a national powerhouse they must beat it (rarely: ~1 in 10, a star ~1 in 3).
+const HS_POST = {
+  National_Powerhouse: { hs_r1: 40, hs_qf: 44, hs_sf: 48, hs_state: 52 },
+  State_Powerhouse: { hs_r1: 50, hs_qf: 53, hs_sf: 56, hs_state: 60 },
+  Regular: { hs_r1: 42, hs_reg: 46, hs_state: 52 }
+};
+function makeOpp(post, round, kind) {
   if (G.stage === 'PRO') {
     const t = pick(PRO_TEAMS.filter((x) => x.id !== G.proId)), r = tstate(t.id).r;
     return { opp: t.name, abbr: t.abbr, c: t.color, r: post ? Math.max(r, 77 + round * 2) : r };
@@ -1451,7 +1465,14 @@ function makeOpp(post, round) {
   let name;
   if (G.stage === 'HS') name = `${pick(TOWNS)} ${pick(MASCOTS)}`;
   else { const others = COLLEGES.filter((c) => c.id !== G.colId); name = chance(35) ? pick(others).name : `${pick(COL_PLACES)} ${pick(COL_SUFFIX)}`; }
-  const r = post ? teamBase() - 4 + round * 4 + ri(-6, 6) : oppBase() + ri(-14, 14);
+  // One state title per state: everyone has to go through the best team in the state. A national powerhouse there meets
+  // you in the final (and the round before too in CA/FL); without one, a regular school's final is against the state
+  // powerhouse. (Team strength is its own scale — 46 regular / 63 state / 76 national — not a player OVR.)
+  const nN = G.stage === 'HS' && post ? HIGH_SCHOOLS.filter((x) => x.tier === 'National_Powerhouse' && x.state === hs().state && x.id !== G.hsId).length : 0;
+  const tier = G.stage === 'HS' ? hs().tier : '';
+  const rival = (tier === 'National_Powerhouse' && kind === 'hs_state' && nN >= 1) || (tier !== 'National_Powerhouse' && ((kind === 'hs_state' && nN >= 1) || ((kind === 'hs_sf' || kind === 'hs_reg') && nN >= 2)));
+  const hp = rival ? (tier === 'National_Powerhouse' ? 76 : 72) : tier === 'Regular' && kind === 'hs_state' ? 63 : G.stage === 'HS' && post && (HS_POST[tier] || {})[kind];
+  const r = hp ? hp + ri(-6, 6) : post ? teamBase() - 4 + round * 4 + ri(-6, 6) : oppBase() + ri(-14, 14);
   return { opp: name, abbr: abbrOf(name), c: '#475569', r };
 }
 function colGame(c, bump) { return { opp: c.name.replace(' (FCS)', ''), abbr: c.abbr, c: c.color, r: colStrength(c) + ri(-5, 5) + (bump || 0), cid: c.id }; }
@@ -1664,13 +1685,13 @@ function pushNextPost() {
   const S = G.S;
   if (!S.postQ.length) return;
   const k = S.postQ.shift(), round = S.games.length - S.reg;
-  S.games.push(Object.assign(G.stage === 'COL' ? colPostOpp(k) : makeOpp(true, round), { kind: k }));
+  S.games.push(Object.assign(G.stage === 'COL' ? colPostOpp(k) : makeOpp(true, round, k), { kind: k }));
 }
 function schedulePost() {
   const S = G.S, w = S.w;
   if (G.stage === 'HS') {
     const t = hs().tier;
-    if (w >= 6) S.postQ = t === 'Regular' ? ['hs_r1', 'hs_reg', 'hs_state'] : t === 'State_Powerhouse' ? ['hs_r1', 'hs_qf', 'hs_sf', 'hs_state'] : (w >= 9 ? [] : ['hs_r1']).concat(['hs_qf', 'hs_sf', 'hs_state', 'hs_nsf', 'hs_nat']);
+    if (w >= 6) S.postQ = t === 'Regular' ? ['hs_r1', 'hs_reg', 'hs_state'] : t === 'State_Powerhouse' ? ['hs_r1', 'hs_qf', 'hs_sf', 'hs_state'] : (w >= 9 ? [] : ['hs_r1']).concat(['hs_qf', 'hs_sf', 'hs_state']);
   } else if (G.stage === 'COL') {
     const c = col();
     if (c.kind === 'FCS') { if (w >= 8) S.postQ = ['cfp1', 'cfpqf', 'cfpsf', 'cfpf']; }
@@ -1860,7 +1881,8 @@ function finishSeason() {
     pts = { Bench: 2, Situational: 2, Starter: 3, Star_Player: 4 }[G.role] + Math.floor(S.w / 4) + (S.champ ? 2 : 0);
     if (S.champ === 'hs_nat') honor('natprep', `${G.year} National Prep Champion`, `${G.year} Campeón Nacional Prep`, `${G.year} Campeão Nacional Prep`);
     if (S.stateChamp) honor('state', `${G.year} State Champion`, `${G.year} Campeón Estatal`, `${G.year} Campeão Estadual`);
-    if (G.role === 'Star_Player' && (S.w >= 8 || S.hl >= 3)) honor('allstate', `${G.year} All-State`, `${G.year} Selección Estatal`, `${G.year} Seleção Estadual`);
+    // role-based on purpose (a powerhouse backup is never All-State over a small-school star); starters on a state champion always make it
+    if ((G.role === 'Star_Player' && (S.w >= 8 || S.hl >= 3)) || (STARTS(G.role) && S.stateChamp)) honor('allstate', `${G.year} All-State`, `${G.year} Selección Estatal`, `${G.year} Seleção Estadual`);
     en.push(`Fame +${gain} → ${G.fame} · ${stars ? stars + '-star' : 'Unranked'}`);
     es.push(`Fama +${gain} → ${G.fame} · ${stars ? stars + ' estrellas' : 'Sin clasificar'}`); pt.push(`Fama +${gain} → ${G.fame} · ${stars ? stars + ' estrelas' : 'Sem ranking'}`);
     if (stars > before) { en.push(`Recruiting services upgraded you to ${stars}★!`); es.push(`¡Los servicios de reclutamiento te suben a ${stars}★!`); pt.push(`Os sites de recrutamento te subiram para ${stars}★!`); }
@@ -1978,6 +2000,10 @@ function releaseCheck() {
   const c = G.contract, mv = marketAPY();
   if (c.type === 'rookie' && c.round === 1) return false;
   if (c.apy > mv * 1.7 && G.age >= 29) return chance(60);
+  // Two poor seasons on a contract that now looks overpaid: realistic but mild (12%, +6% per point worse, max 45%),
+  // and halved while a big chunk of guaranteed money is still unpaid (cutting him would only create dead money).
+  const p = prodScore();
+  if (p <= -3 && c.apy > mv * 1.25) { const pr = clamp(12 + (-3 - p) * 6, 12, 45) * (Math.max(0, c.gtd - c.paid) > c.apy ? 0.5 : 1); if (chance(pr)) return true; }
   if (ovr() < 52 && c.apy > minSal(G.accrued, G.year) * 1.3) return chance(45);
   // declining veterans get cut for younger, cheaper players — how most real careers end
   const past = G.age - decAge(G.subPos);
@@ -2148,7 +2174,9 @@ function makeNeg(kind) {
     ask: { mult: 1.15, years: py, gtd: 0.5 }, pat: 3 + a.pat, msg: null, tip: false
   };
 }
-function negCost(N) { return N.mv * N.ask.mult * (1 + (N.ask.gtd - 0.45) * 0.45) * (1 + 0.035 * Math.abs(N.ask.years - N.py)); }
+// NFL years are mostly not guaranteed (a team can cut you), so extra years cost a team little (+1%/yr) while fewer years
+// (you reach free agency sooner) cost it control (+4%/yr). Guaranteed money is the real fight.
+function negCost(N) { const dy = N.ask.years - N.py; return N.mv * N.ask.mult * (1 + (N.ask.gtd - 0.45) * 0.45) * (1 + (dy > 0 ? 0.01 : 0.04) * Math.abs(dy)); }
 function negSubmit() {
   const N = G.off, askApy = Math.round(N.mv * N.ask.mult), cost = negCost(N);
   if (cost <= N.max) { negSign(askApy, N.ask.years, N.ask.gtd); return; }
@@ -2839,7 +2867,7 @@ function viewNeg() {
       ${N.kind === 'resign' ? `<button class="btn bb full mt" data-act="testFA">${L('Test free agency', 'Probar la agencia libre', 'Testar a free agency')}<small>${L('All 32 teams can bid — your team keeps its current offer in the mix', 'Los 32 equipos pueden ofertar — tu equipo mantiene su oferta actual', 'Os 32 times podem fazer ofertas — seu time mantém a oferta atual')}</small></button>` : ''}
       ${N.tip ? '' : `<button class="btn ob full mt" data-act="tipAd">🎬 ${L('Watch ad: insider tip (their max)', 'Ver anuncio: dato interno (su máximo)', 'Ver anúncio: dica interna (o máximo deles)')}</button>`}
     </div>
-    <p class="hint">${L('Each rejected ask costs patience (♥). More guaranteed money or a length they dislike makes your ask more expensive for them.', 'Cada rechazo cuesta paciencia (♥). Más dinero garantizado o una duración que no quieren encarece tu petición.', 'Cada recusa custa paciência (♥). Mais dinheiro garantido ou uma duração que eles não querem encarece seu pedido.')}</p>
+    <p class="hint">${L('Each rejected ask costs patience (♥). Guaranteed money is what really costs them; extra years are cheap (they can cut you), fewer years than they want cost more.', 'Cada rechazo cuesta paciencia (♥). Lo que de verdad les cuesta es el dinero garantizado; más años salen baratos (pueden cortarte), menos años de los que quieren salen caros.', 'Cada recusa custa paciência (♥). O que realmente custa para eles é o dinheiro garantido; mais anos saem baratos (podem te dispensar), menos anos do que querem saem caros.')}</p>
   </div></div>`;
 }
 function viewFA() {
@@ -3668,6 +3696,7 @@ if (!DEV_HOST) window.GridironLife = { setBgm: (url) => BGM.set(url) }; // relea
     const sub = params.get('pos');
     if (sub) { const pg = Object.keys(POS_GROUPS).find((k) => POS_GROUPS[k].subs.includes(sub)); if (pg) { CR.pg = pg; CR.sub = sub; } }
     if (REGIONS.some((r) => r[0] === params.get('region'))) { CR.region = params.get('region'); fitHsName(); }
+    if (['Regular', 'State_Powerhouse', 'National_Powerhouse'].includes(params.get('school'))) CR.school = params.get('school');
     startCareer();
   }
 })();
