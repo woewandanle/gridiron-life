@@ -2352,7 +2352,7 @@ const HOF_BAR = 90, HOF_FIRST = 150; // rings/dynasties, longevity and milestone
 /* Hall of Legends = an arcade-style high-score board saved on this device (IndexedDB).
    Each entry is a compact snapshot (~1–2 KB): name, face, inducted levels, career totals, award counts and the
    real-world timestamp. Only the top HALL_MAX entries are kept, so it stays under ~100 KB even after years of use. */
-const HALL_MAX = 50;
+const HALL_MAX = 50, HALL_GROUP = 15, HALL_SHOW = 15; // top 50 overall + each group's top 15 are kept; each tab lists 15
 const legacyScore = (H) => Math.round((H.pro ? H.score : 0) * 100 + (H.col ? H.colScore : 0) * 30); // the pro career is what makes a legend
 function levelSnap(lv) {
   const T = levelTotals(lv); if (!T.rows.length) return null;
@@ -2369,21 +2369,23 @@ function addHallEntry(rookie) {
     peak: G.peakOvr, fame: G.fame, earn: grossEarn(), seed: G.seed, honors: cnt, region: G.region, hs: hs() ? { n: hs().name, st: hs().state } : null,
     COL: H.col || (rookie && G.hist.some((h) => h.stage === 'COL')) ? levelSnap('COL') : null, PRO: H.pro || (rookie && G.hist.some((h) => h.stage === 'PRO')) ? levelSnap('PRO') : null };
   const all = (META.hall || []).filter((x) => x.ts && (rookie || !x.rookie)).concat([e]).sort((a, b) => b.score - a.score), perGroup = {};
-  META.hall = all.filter((x, i) => { const g = posGroupOf(x.pos); perGroup[g] = (perGroup[g] || 0) + 1; return i < HALL_MAX || perGroup[g] <= 10; });
+  META.hall = all.filter((x, i) => { const g = hallGroupOf(x.pos); perGroup[g] = (perGroup[g] || 0) + 1; return i < HALL_MAX || perGroup[g] <= HALL_GROUP; });
   G.hallRank = META.hall.findIndex((x) => x.id === e.id) + 1;
 }
 const fmtTs = (ts) => { const d = new Date(ts), z = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`; };
 const ORD = (n) => (lang === 'es' || lang === 'pt' ? `${n}º` : n + (n % 100 >= 11 && n % 100 <= 13 ? 'TH' : ['TH', 'ST', 'ND', 'RD'][n % 10] || 'TH'));
 const posGroupOf = (sub) => Object.keys(POS_GROUPS).find((k) => POS_GROUPS[k].subs.includes(sub)) || 'QB';
-const HALL_TABS = [['ALL', B('All', 'Todos', 'Todos')], ['QB', B('QB', 'QB', 'QB')], ['RB', B('RB', 'RB', 'RB')], ['SP', B('WR/CB/S', 'WR/CB/S', 'WR/CB/S')], ['BS', B('TE/LB/DE', 'TE/LB/DE', 'TE/LB/DE')], ['LM', B('Line', 'Línea', 'Linha')], ['K', B('K', 'K', 'K')]];
+// The board splits WR out of the WR/CB/S creator group (offense and defense compete on very different numbers).
+const hallGroupOf = (sub) => (sub === 'WR' ? 'WR' : posGroupOf(sub));
+const HALL_TABS = [['ALL', B('All', 'Todos', 'Todos')], ['QB', B('QB', 'QB', 'QB')], ['RB', B('RB', 'RB', 'RB')], ['WR', B('WR', 'WR', 'WR')], ['SP', B('CB/S', 'CB/S', 'CB/S')], ['BS', B('TE/LB/DE', 'TE/LB/DE', 'TE/LB/DE')], ['LM', B('Line', 'Línea', 'Linha')], ['K', B('K', 'K', 'K')]];
 let hallTab = 'ALL';
 let hallSort = 'score'; // 'score' | 'earn' (career earnings, high → low)
-const hallList = () => (META.hall || []).filter((x) => x.ts && (hallTab === 'ALL' || posGroupOf(x.pos) === hallTab)).sort((a, b) => (hallSort === 'earn' ? (b.earn || 0) - (a.earn || 0) : b.score - a.score));
+const hallList = () => (META.hall || []).filter((x) => x.ts && (hallTab === 'ALL' || hallGroupOf(x.pos) === hallTab)).sort((a, b) => (hallSort === 'earn' ? (b.earn || 0) - (a.earn || 0) : b.score - a.score));
 function hallBoard() {
   const list = hallList(), total = (META.hall || []).filter((x) => x.ts).length;
   const tabs = total ? `<div class="hs-tabs">${HALL_TABS.map(([k, n]) => `<button class="pill ${hallTab === k ? 'on' : ''}" data-act="hallTab" data-v="${k}">${tx(n)}</button>`).join('')}</div>
     <div class="hs-tabs hs-sort"><span class="d">${L('Sort', 'Ordenar', 'Ordenar')}:</span><button class="pill ${hallSort === 'score' ? 'on' : ''}" data-act="hallSort" data-v="score">🏆 ${L('Score', 'Puntaje', 'Pontuação')}</button><button class="pill ${hallSort === 'earn' ? 'on' : ''}" data-act="hallSort" data-v="earn">$ ${L('Earnings', 'Ganancias', 'Ganhos')}</button></div>` : '';
-  const rows = list.slice(0, 10).map((e, i) => `<button class="hs-row" data-act="hallCard" data-i="${i}">
+  const rows = list.slice(0, HALL_SHOW).map((e, i) => `<button class="hs-row" data-act="hallCard" data-i="${i}">
       <span class="hs-rk m${Math.min(i + 1, 4)}">${i + 1}</span>
       <canvas data-hrow="${i}" width="48" height="48"></canvas>
       <span class="hs-nm">${esc(e.name)}<em>${e.pos} · ${e.rookie ? `<i class="hs-rookie">${L('FIRST CAREER', 'PRIMERA CARRERA', 'PRIMEIRA CARREIRA')}</i>` : ''}${[e.pro ? (e.first ? L('PRO HOF 1st ballot', 'HOF PRO 1.ª boleta', 'HOF PRO 1ª votação') : L('PRO HOF', 'HOF PRO', 'HOF PRO')) : '', e.col ? L('COLLEGE HOF', 'HOF UNIV.', 'HOF UNIV.') : ''].filter(Boolean).join(' + ')}</em><em>${fmtTs(e.ts)}</em></span>
@@ -3309,6 +3311,16 @@ const openYears = new Set(), closedYears = new Set();
    ===================================================================== */
 // Career card PNG: header, trophy summary (pixel icons, stacked counts), level totals (auto-sized columns), seed.
 const CARD_COLS = { QB: [['pyd', 'Yds'], ['ptd', 'TD'], ['int', 'Int'], ['pct', 'Cmp%'], ['ryd', 'RuYds']], K: [['fgm', 'FGM'], ['fga', 'FGA'], ['fgp', 'FG%'], ['lng', 'Lng'], ['fg50', '50+']] };
+// The team a career is remembered with: the pro club he played the most seasons for (ties → more starts), else his
+// main college, else his high school — not simply the last stop before retirement.
+function careerTeam() {
+  for (const st of ['PRO', 'COL', 'HS']) {
+    const m = {}; G.hist.filter((h) => h.stage === st).forEach((h) => { const t = (m[h.team] = m[h.team] || { n: 0, gs: 0 }); t.n++; t.gs += h.gs || 0; });
+    const best = Object.entries(m).sort((a, b) => b[1].n - a[1].n || b[1].gs - a[1].gs)[0];
+    if (best) return best[0];
+  }
+  return G.proId ? proT(G.proId).name : '';
+}
 function careerPNG() {
   const W = 900, f1 = '"Press Start 2P", monospace', f2 = '"VT323", monospace';
   const stacks = HONOR_ORDER.map(([k, lbl]) => [k, lbl, G.honors.filter((x) => x.k === k).length]).filter((x) => x[2]);
@@ -3326,7 +3338,7 @@ function careerPNG() {
   { const t = hs() ? hsLine(hs().name, hs().state) : regionName(G.region); let fs = 24; c.font = `${fs}px ${f2}`; while (fs > 16 && c.measureText(t).width > W - 260) { fs--; c.font = `${fs}px ${f2}`; } c.fillStyle = '#7f8ab3'; c.fillText(t, 228, 128); }
   c.font = `28px ${f2}`; c.fillStyle = '#a7b1d4';
   c.fillText(`${L('Peak', 'Pico', 'Auge')} OVR ${G.peakOvr} · ${L('Peak stars', 'Estrellas', 'Estrelas')} ${G.peakStars}★ · ${L('Fame', 'Fama', 'Fama')} ${G.fame}`, 228, 156);
-  c.fillText(`${L('Earnings', 'Ganancias', 'Ganhos')} ${money(grossEarn())} · ${G.proId ? proT(G.proId).name : G.colId ? col().name : hs().name}`, 228, 184);
+  c.fillText(`${L('Earnings', 'Ganancias', 'Ganhos')} ${money(grossEarn())} · ${careerTeam()}`, 228, 184);
   c.fillStyle = '#3ddc84'; c.fillText(`${G.hof && G.hof.pro ? L('HALL OF LEGENDS · CLASS OF ', 'SALÓN DE LEYENDAS · CLASE ', 'HALL DAS LENDAS · TURMA ') + (G.retiredYear + 5) : L('Career complete', 'Carrera completa', 'Carreira completa')}${G.hof && G.hof.col ? L(' · College HOF', ' · HOF Universitario', ' · HOF Universitário') : ''}${G.clutchStars ? ' · Mr. Clutch ' + '★'.repeat(G.clutchStars) : ''}`, 228, 212);
   // trophy summary
   c.fillStyle = '#ffd23f'; c.font = `11px ${f1}`; c.fillText(L('TROPHY CASE', 'VITRINA', 'ESTANTE'), 40, honTop - 12);
@@ -3421,6 +3433,9 @@ function autoSpend() {
   toast(L('AUTO-TRAINED', 'ENTRENAMIENTO AUTO', 'TREINO AUTOMÁTICO'), 'good');
 }
 
+// Quick Play position odds (%): the popular, easy-to-read spots come up most — QB, WR, RB, and the kicker (simple and
+// a little special) — while every position still shows up.
+const QP_W = { QB: 20, WR: 14, RB: 12, K: 7, TE: 7, LB: 7, DE: 7, CB: 7, S: 6, OT: 4, OL: 3, DL: 3, DT: 3 };
 const ACT = {
   // ---- title / creator ----
   continue: () => resumeCareer(savedCareer),
@@ -3428,7 +3443,7 @@ const ACT = {
   quickPlay: () => {
     // Quick Play: random player, position, home state and school — straight into the first camp.
     ACT.randFace(); CR.name = mrand(100) < 30 ? funName() : `${FIRST_NAMES[mrand(FIRST_NAMES.length)]} ${LAST_NAMES[mrand(LAST_NAMES.length)]}`;
-    CR.num = 1 + mrand(99); const pgs = Object.keys(POS_GROUPS); CR.pg = pgs[mrand(pgs.length)]; CR.sub = POS_GROUPS[CR.pg].subs[mrand(POS_GROUPS[CR.pg].subs.length)];
+    CR.num = 1 + mrand(99); { let r = mrand(100); CR.sub = Object.keys(QP_W).find((k) => (r -= QP_W[k]) < 0) || 'QB'; CR.pg = posGroupOf(CR.sub); }
     CR.region = REGIONS[mrand(mrand(100) < 88 ? 51 : REGIONS.length)][0]; CR.school = 'random'; CR.hsName = hsNamePool(CR.region)[mrand(hsNamePool(CR.region).length)];
     CR.seed = Math.random().toString(36).slice(2, 10); CR.seedOk = false;
     Ads.commercial().then(startCareer);
