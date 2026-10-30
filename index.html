@@ -1531,8 +1531,8 @@ function rushRating(sp, a) {
 function sackRoll(sp, a, m, e = 0) {
   // League-elite linemen (eliteE) win more (interior) and get home in bunches (all DL): an elite edge posts 16-20
   // (Watt, Strahan, T.J. Watt 22.5), an elite DT 12-18 (Donald 20.5).
-  const k = SACK_K[sp], rr = rushRating(sp, a), dl = sp === 'DE' || sp === 'DT' || sp === 'DL', cl = G.stage === 'COL', top = dl ? e * (cl ? 2.5 : 1.3) : 0;
-  const p = clamp(m * (k[0] + (rr - 50) * k[1] + (sp !== 'DE' || cl ? top * 0.6 : 0)), sp === 'CB' || sp === 'S' ? 0.3 : 1.5, 85);
+  const k = SACK_K[sp], rr = rushRating(sp, a), dl = sp === 'DE' || sp === 'DT' || sp === 'DL', cl = G.stage === 'COL', top = dl ? e * 2.5 : 0;
+  const p = clamp(m * (k[0] + (rr - 50) * k[1] + top * 0.6), sp === 'CB' || sp === 'S' ? 0.3 : 1.5, 85);
   return chance(p) ? (sp !== 'CB' && sp !== 'S' && chance(25 + top * 1.5) ? (sp === 'LB' ? 1.5 : 2) : 1) : 0;
 }
 const ffRoll = (sp, a, sck, tkl) => (chance(clamp(sck * 20 + tkl * STRIP[sp] * 100 * (1 + (a.pow - 50) * 0.01), 0, 60)) ? 1 : 0);
@@ -1551,7 +1551,10 @@ const SNAPS = { Star_Player: 1, Starter: 1, Situational: 0.6, Bench: 0.25 };
 // College: the same idea from the All-Conference 1st-team line up, so All-Americans (OVR ~59-62) put up All-American
 // numbers (Heisman-level at the very top: Burrow 60 TD, Sanders 2,628, Smith 1,856, Suggs 24 sacks).
 const ELITE_GAP = 4.5, COL_GATE = { QB: 58, DT: 59, K: 61 };
-const eliteE = () => (G.stage === 'PRO' ? clamp(ovr() - (POS_BASE[G.subPos] + ELITE_GAP), 0, 8) : G.stage === 'COL' ? clamp(ovr() - (COL_GATE[G.subPos] || 57), 0, 8) : 0);
+// The first 4 points past the trigger count in full, the next 4 at 40% — real top builds (2-6 points past) get the full
+// effect, a maxed-out freak doesn't run away from the record book.
+const eliteShape = (x) => Math.min(x, 4) + 0.4 * Math.max(0, Math.min(x, 8) - 4);
+const eliteE = () => eliteShape(G.stage === 'PRO' ? Math.max(0, ovr() - (POS_BASE[G.subPos] + ELITE_GAP)) : G.stage === 'COL' ? Math.max(0, ovr() - (COL_GATE[G.subPos] || 57)) : 0);
 function gameStats(m, snaps, q, ctx) {
   ctx = ctx || { pts: 21, close: false };
   const a = G.ab, sp = G.subPos, R = Math.round, e = eliteE(), cE = G.stage === 'COL' ? e : 0; // cE: college-only extras
@@ -1622,8 +1625,8 @@ function gameStats(m, snaps, q, ctx) {
     // TE: Hands = catches, Vision = finding the soft spot (yards per catch) and the red-zone look (TD share)
     // A league-elite TE becomes the offense's first read (Kelce, Gronkowski, Kittle: 90-110 catches, 1,200-1,400 yds)
     const teY = a.sk2 * 0.5 + a.agi * 0.2 + a.pow * 0.2 + a.brs * 0.1 + sa;
-    const recN = R(rec * (1 + (wr ? cE * 0.05 : e * (cE ? 0.09 : 0.065))));
-    const ypr = wr ? clamp(10 + (a.spd + sa - 30) * 0.06 + (a.sk2 + sa - 30) * 0.04 + cE * 0.2 + rf(-3, 4), 4, 24) : clamp(9 + (teY - 30) * 0.04 + e * (cE ? 0.3 : 0.23) + rf(-2, 3), 4, 19);
+    const recN = R(rec * (1 + (wr ? e * (cE ? 0.05 : 0.06) : e * (cE ? 0.09 : 0.17))));
+    const ypr = wr ? clamp(10 + (a.spd + sa - 30) * 0.06 + (a.sk2 + sa - 30) * 0.04 + e * (cE ? 0.2 : 0.3) + rf(-3, 4), 4, 24) : clamp(9 + (teY - 30) * 0.04 + e * (cE ? 0.3 : 0.5) + rf(-2, 3), 4, 20);
     const recyd = R(recN * ypr), rectd = Math.max(0, R(recyd / 120 * (wr ? 1 : clamp(1 + (a.sk2 + sa - 55) * 0.01, 0.7, 1.4)) + rf(-0.5, 0.5)));
     return { d: { rec: recN, recyd, rectd }, big: recyd >= (wr ? 150 : 110) || rectd >= 3, line: `${recN} REC · ${recyd} YDS · ${rectd} TD` };
   }
@@ -1631,7 +1634,7 @@ function gameStats(m, snaps, q, ctx) {
     // DB tackling = power + closing speed/burst + agility; INT = ball skills (Hands) + where he stands (Positioning) + reading the QB (IQ);
     // breakups = coverage position + hips + speed to close.
     const dbTk = clamp(1 + (a.pow * 0.35 + a.spd * 0.25 + a.agi * 0.2 + a.brs * 0.2 + STAGE_ADJ() - 60) * 0.01, 0.75, 1.25),
-      tkl = R(ri(2, 7) * m * dbTk) + (sp === 'S' ? R(2 * m * dbTk) : 0), bh = a.sk1 * 0.6 + a.sk2 * 0.2 + a.iq * 0.2 + STAGE_ADJ(), int = chance(m * (5 + (bh - 30) * 0.3 + e * (cE ? 6 : 1.25))) ? 1 : 0, cb = sp === 'CB', // elite ball hawks: 8-11 INT years (Diggs 11, Reed 9)
+      tkl = R(ri(2, 7) * m * dbTk) + (sp === 'S' ? R(2 * m * dbTk) : 0), bh = a.sk1 * 0.6 + a.sk2 * 0.2 + a.iq * 0.2 + STAGE_ADJ(), int = chance(m * (5 + (bh - 30) * 0.3 + e * (cE ? 6 : 4))) ? 1 : 0, cb = sp === 'CB', // elite ball hawks: 8-11 INT years (Diggs 11, Reed 9)
       pdS = a.sk2 * 0.5 + a.agi * 0.2 + a.spd * 0.15 + a.brs * 0.15 + STAGE_ADJ(), // "click and close": burst to the ball
       // Passes defended: NFL starting CB ~10-15 a year, the league leader ~20-25; safeties ~5-10.
       pdP = clamp(m * (cb ? 40 + (pdS - 30) * 0.6 : 22 + (pdS - 30) * 0.4), 3, 92),
@@ -1670,7 +1673,7 @@ function gameStats(m, snaps, q, ctx) {
     const ot = sp === 'OT', ls = STAGE_ADJ(), pE = a.sk2 * 0.75 + (ot ? a.agi * 0.1 + a.brs * 0.1 : a.pow * 0.2) + a.iq * 0.05 + ls; // OT: kick-slide out of the stance (burst) + feet
     const pan = R(ri(1, 5) * m * (ot ? 0.85 : 1.1) * clamp(0.6 + (a.sk1 * 0.7 + a.pow * 0.3 - 30) * 0.03, 0.4, 2.2));
     // a league-elite blocker (eliteE) gives up far less: PFF's best full seasons are single-digit pressures, zero sacks
-    const lk = 1 - e * 0.06;
+    const lk = 1 / (1 + e * (ot ? 0.22 : 0.45)); // guards' trigger sits higher on the OVR scale, so each point counts more
     const sa = chance(snaps * clamp(ot ? 52 - (pE - 30) * 0.8 : 34 - (pE - 30) * 0.55, 3, 60) * lk) ? 1 : 0;
     const pra = Math.max(0, R(snaps * Math.max(0.3, ot ? 3.4 - (pE - 30) * 0.045 : 2.6 - (pE - 30) * 0.035) * lk * rf(0.4, 1.6)));
     return { d: { pan, sa, pra }, big: pan >= 7 && sa === 0, line: `${pan} PANCAKES · ${sa} SACKS ALW · ${pra} PRESSURES ALW` };
@@ -1844,22 +1847,23 @@ const PRO_MEAN = 65.2; // league-wide starter level after position normalization
 // seasons pulled toward the same performance level (damped 70% to stay clear of sample noise).
 const POS_BASE = { QB: 64.9, RB: 59.5, WR: 61.7, TE: 62.1, CB: 57.7, S: 58.4, LB: 60.8, DE: 60.9, DL: 60.2, DT: 61.5, OL: 63.9, OT: 61.3, K: 63.75 };
 const COL_FIX = { QB: 2.4, RB: -1.9, WR: -1.6, TE: -1.2, LB: -2.0, DE: -2.2, DL: 2.3, DT: 1.9, CB: 0.8, S: -2.2, OT: 0.2, OL: 1.7, K: 1.5 };
-// HISTORIC SEASON — one definition opens both awards: Offensive Player of the Year (offense) and the MVP stat mark.
-// Regular-season box score only (ratings don't vote). Each line is at least a top-10-all-time NFL season at the position;
-// where the game's elite production runs above the real league (QB, RB), the line sits higher still, so only an elite
-// player's best seasons — about one in three — qualify. Real references: QB Manning 5,477 / 55 TD, Lamar 2019 (1,206
-// rush + 43 TD); RB Dickerson 2,105, Johnson 2,509 scrimmage, Tomlinson 31 TD; WR Johnson 1,964, Jones 1,871, Moss 23 TD;
-// TE Kelce 1,416, Gronkowski 17 TD; K Akers 44 FGM, Tucker 38/39; DE Strahan / T.J. Watt 22.5; DT Donald 20.5;
-// DB Diggs 11 INT. Linemen (PFF charting — pancakes are never officially kept): zero sacks and single-digit-ish pressures allowed.
+// HISTORIC SEASON — one definition opens both awards: Offensive Player of the Year (offense) and the MVP stat mark
+// (and a defender's DPOY). Regular-season box score only (ratings don't vote). Each line is about where the NFL's
+// top-10 single seasons ever at the position begin — QB a notch higher, top-5 (~5,300 yds / 49 TD; Manning 5,477 / 55),
+// because the game's elite QBs out-throw the real league; dual threat Lamar 2019;
+// RB ~1,950 rush (Dickerson 2,105), ~2,280 scrimmage (Johnson 2,509), ~25 TD (Tomlinson 31); WR ~1,750 yds
+// (Johnson 1,964), 17 TD (Moss 23), 133 catches (Thomas 149); TE ~1,250 yds (Kelce 1,416), 13 TD (Gronkowski 17);
+// K 40+ FGM (Akers 44); DE 20 sacks (Strahan 22.5); DT 14.5 (Donald 20.5); DB 10 INT (Diggs 11).
+// Linemen (PFF charting — pancakes are never officially kept): zero sacks and single-digit-ish pressures allowed.
 const HIST = {
-  QB: (v) => v('pyd') >= 5550 || v('ptd') >= 51 || (v('ryd') >= 1000 && v('ptd') + v('rtd') >= 40),
-  RB: (v) => v('ryd') >= 2000 || v('ryd') + v('recyd') >= 2650 || v('rtd') + v('rectd') >= 27,
-  WR: (v) => v('recyd') >= 1850 || v('rectd') >= 18 || v('rec') >= 135,
-  TE: (v) => v('recyd') >= 1400 || v('rectd') >= 16,
-  OL: (v) => v('sa') === 0 && v('pra') <= 10, OT: (v) => v('sa') === 0 && v('pra') <= 11,
-  K: (v) => v('fgm') >= 44 || (v('fgm') >= 40 && v('fgm') >= v('fga') * 0.95),
-  DE: (v) => v('sck') >= 20, DT: (v) => v('sck') >= 17, DL: (v) => v('sck') >= 19,
-  LB: (v) => v('tkl') >= 195 || v('sck') >= 15, CB: (v) => v('int') >= 10, S: (v) => v('int') >= 10
+  QB: (v) => v('pyd') >= 5300 || v('ptd') >= 49 || (v('ryd') >= 1000 && v('ptd') + v('rtd') >= 40),
+  RB: (v) => v('ryd') >= 1950 || v('ryd') + v('recyd') >= 2280 || v('rtd') + v('rectd') >= 25,
+  WR: (v) => v('recyd') >= 1750 || v('rectd') >= 17 || v('rec') >= 133,
+  TE: (v) => v('recyd') >= 1250 || v('rectd') >= 13,
+  OL: (v) => v('sa') === 0 && v('pra') <= 10, OT: (v) => v('sa') === 0 && v('pra') <= 12,
+  K: (v) => v('fgm') >= 40 || (v('fgm') >= 36 && v('fgm') >= v('fga') * 0.95),
+  DE: (v) => v('sck') >= 20, DT: (v) => v('sck') >= 14.5, DL: (v) => v('sck') >= 17,
+  LB: (v) => v('tkl') >= 180 || v('sck') >= 14, CB: (v) => v('int') >= 10, S: (v) => v('int') >= 10
 };
 const historic = (st, pos) => !!(st && HIST[pos] && HIST[pos]((k) => st[k] || 0));
 // MVP_CORE = that position's top ~15% (a clear star) — the bar for the 15-win route.
@@ -3783,6 +3787,7 @@ if (!DEV_HOST) window.GridironLife = { setBgm: (url) => BGM.set(url) }; // relea
     if (sub) { const pg = Object.keys(POS_GROUPS).find((k) => POS_GROUPS[k].subs.includes(sub)); if (pg) { CR.pg = pg; CR.sub = sub; } }
     if (REGIONS.some((r) => r[0] === params.get('region'))) { CR.region = params.get('region'); fitHsName(); }
     if (['Regular', 'State_Powerhouse', 'National_Powerhouse'].includes(params.get('school'))) CR.school = params.get('school');
+    if (params.get('wonder') === '1') CR.wonder = true;
     startCareer();
   }
 })();
