@@ -1898,7 +1898,7 @@ function awardsVoting(S, o) {
     // shrinking — 3rd 50%, 4th 33%, 5th 25%…
     const op = hcount('opoy');
     // Modern voters: every OPOY since 2010 came from a 10+ win playoff team (regular-season wins).
-    V.opoy = hitStat && rw >= 10 && ['QB', 'RB', 'WR', 'TE', 'OL', 'OT'].includes(pos) && (pos !== 'OL' || op < 2 || chance(100 / op));
+    V.opoy = hitStat && rw >= 10 && ['QB', 'RB', 'WR', 'TE', 'OL', 'OT'].includes(pos) && (pos !== 'OL' || op < 2 || V.mvp || chance(100 / op)); // an MVP season is never denied the OPOY
     // Defensive Player of the Year: the best defender in the league, team record barely matters (J.J. Watt won on losing teams).
     // Edge rushers win it most often, then interior DL / LB, then DBs.
     // A historic defensive season (HIST) wins it outright; otherwise the league's top defender (1st team, rank 1) is a vote.
@@ -2399,7 +2399,7 @@ const HOF_BAR = 90, HOF_FIRST = 150; // rings/dynasties, longevity and milestone
    Each entry is a compact snapshot (~1–2 KB): name, face, inducted levels, career totals, award counts and the
    real-world timestamp. Only the top HALL_MAX entries are kept, so it stays under ~100 KB even after years of use. */
 const HALL_MAX = 50, HALL_GROUP = 15, HALL_SHOW = 15; // top 50 overall + each group's top 15 are kept; each tab lists 15
-const legacyScore = (H) => Math.round((H.pro ? H.score : 0) * 100 + (H.col ? H.colScore : 0) * 30); // the pro career is what makes a legend
+const legacyScore = (H) => Math.round((H.pro ? H.score + (H.fl ? H.fl.length : 0) * 6 : 0) * 100 + (H.col ? H.colScore : 0) * 30); // the pro career is what makes a legend; Franchise Legend ≈ an All-League 2nd team
 function levelSnap(lv) {
   const T = levelTotals(lv); if (!T.rows.length) return null;
   const cols = STAT_COLS[G.subPos];
@@ -2412,7 +2412,7 @@ function addHallEntry(rookie) {
   G.honors.forEach((x) => { cnt[x.k] = (cnt[x.k] || 0) + 1; });
   const e = { id: G.seed + '|' + Date.now(), ts: Date.now(), name: G.name, num: G.num, pos: G.subPos, av: Object.assign({}, G.av),
     pro: !!H.pro, first: !!H.first, col: !!H.col, rookie: !!rookie, score: rookie ? Math.round(H.score * 100 + H.colScore * 30) : legacyScore(H), proScore: H.score, colScore: H.colScore,
-    peak: G.peakOvr, fame: G.fame, earn: grossEarn(), seed: G.seed, honors: cnt, region: G.region, hs: hs() ? { n: hs().name, st: hs().state } : null,
+    peak: G.peakOvr, fame: G.fame, earn: grossEarn(), seed: G.seed, honors: cnt, fl: H.fl || [], region: G.region, hs: hs() ? { n: hs().name, st: hs().state } : null,
     COL: H.col || (rookie && G.hist.some((h) => h.stage === 'COL')) ? levelSnap('COL') : null, PRO: H.pro || (rookie && G.hist.some((h) => h.stage === 'PRO')) ? levelSnap('PRO') : null };
   const all = (META.hall || []).filter((x) => x.ts && (rookie || !x.rookie)).concat([e]).sort((a, b) => b.score - a.score), perGroup = {};
   META.hall = all.filter((x, i) => { const g = hallGroupOf(x.pos); perGroup[g] = (perGroup[g] || 0) + 1; return i < HALL_MAX || perGroup[g] <= HALL_GROUP; });
@@ -2449,6 +2449,7 @@ function hallCardHTML(e, rank) {
   return `<div class="ph yh"><span>${ORD(rank)} · ${L('Legend Card', 'Tarjeta de Leyenda', 'Card de Lenda')}</span><span>${String(e.score).padStart(6, '0')}</span></div><div class="pb hallcard">
     <div class="hc-top"><canvas data-hav="1" width="48" height="48"></canvas><div><b class="px">${esc(e.name)} #${e.num}</b><p>${e.pos} · ${L('Peak', 'Pico', 'Auge')} OVR ${e.peak} · ${L('Fame', 'Fama', 'Fama')} ${e.fame}</p>${e.region ? `<p class="d">${esc(e.hs ? hsLine(e.hs.n, e.hs.st) : regionName(e.region))}</p>` : ''}
       <p class="y">${e.pro ? (e.first ? L('PRO HOF · FIRST BALLOT', 'HOF PRO · PRIMERA BOLETA', 'HOF PRO · PRIMEIRA VOTAÇÃO') : L('PRO HALL OF FAME', 'SALÓN DE LA FAMA PRO', 'HALL DA FAMA PRO')) : ''}${e.pro && e.col ? ' + ' : ''}${e.col ? L('COLLEGE HOF', 'HOF UNIVERSITARIO', 'HOF UNIVERSITÁRIO') : ''}</p>
+      ${e.fl && e.fl.length ? `<p class="y">${e.fl.map((a) => esc(flLabel(a))).join(' · ')}</p>` : ''}
       ${e.rookie ? `<p class="d">${L('First career · not in the Hall of Fame yet', 'Primera carrera · aún no está en el Salón de la Fama', 'Primeira carreira · ainda não está no Hall da Fama')}</p>` : ''}<p class="d">${e.rookie ? L('Retired', 'Retirado', 'Aposentado') : L('Inducted', 'Exaltado', 'Eleito')} ${fmtTs(e.ts)}</p></div></div>
     <div class="hc-badges">${badge(H.mvp, 'MVP')}${badge(H.dpoy, 'DPOY')}${badge(H.opoy, 'OPOY')}${badge(H.allpro, 'AL-1')}${badge(H.allpro2, 'AL-2')}${badge(H.allstar, 'AS')}${badge(H.league, L('Champ', 'Campeón', 'Campeão'))}${badge(H.helmet, 'POY')}${badge(H.allam, 'AA')}${badge(H.natcol, L('Nat. Champ', 'Camp. Nac.', 'Camp. Nac.'))}</div>
     ${lvl(e.PRO, L('Pro career', 'Carrera profesional', 'Carreira profissional'))}${lvl(e.COL, L('College career', 'Carrera universitaria', 'Carreira universitária'))}
@@ -2496,7 +2497,7 @@ function hofCalc() {
 }
 function retire() {
   if (G.phase === 'season' && G.S && G.S.gi > 0 && !G.S.ended) return;
-  G.hof = hofCalc();
+  G.hof = hofCalc(); G.hof.fl = franchiseTeams();
   G.stage = 'RET'; G.phase = 'retired'; G.retiredYear = G.year; G.off = null; G.offQ = [];
   addFeed('gold', B('Retirement', 'Retiro', 'Aposentadoria'), B(`Pro HOF score ${G.hof.score} (${HOF_BAR} needed) · College HOF score ${G.hof.colScore} (60 needed).`, `Puntaje HOF Pro ${G.hof.score} (se necesita ${HOF_BAR}) · Puntaje HOF Universitario ${G.hof.colScore} (se necesita 60).`, `Pontuação HOF Pro ${G.hof.score} (precisa de ${HOF_BAR}) · Pontuação HOF Universitário ${G.hof.colScore} (precisa de 60).`));
   META.careers = (META.careers || 0) + 1;
@@ -3367,6 +3368,14 @@ function careerTeam() {
   }
   return G.proId ? proT(G.proId).name : '';
 }
+// Franchise Legend: 12+ pro seasons with one club (rookie deal plus two more contracts — the team twice chose him as
+// its face). Shown on the career and Legend cards; adds a little to the Hall of Legends score (not to the HOF vote).
+const FRANCHISE_YRS = 12;
+function franchiseTeams() {
+  const m = {}; G.hist.filter((h) => h.stage === 'PRO').forEach((h) => { const a = h.abbr || abbrOf(h.team); m[a] = (m[a] || 0) + 1; });
+  return Object.keys(m).filter((a) => m[a] >= FRANCHISE_YRS);
+}
+const flLabel = (a) => L(`${a} FRANCHISE LEGEND`, `LEYENDA DE ${a}`, `LENDA DE ${a}`);
 function careerPNG() {
   const W = 900, f1 = '"Press Start 2P", monospace', f2 = '"VT323", monospace';
   const stacks = HONOR_ORDER.map(([k, lbl]) => [k, lbl, G.honors.filter((x) => x.k === k).length]).filter((x) => x[2]);
@@ -3384,7 +3393,8 @@ function careerPNG() {
   { const t = hs() ? hsLine(hs().name, hs().state) : regionName(G.region); let fs = 24; c.font = `${fs}px ${f2}`; while (fs > 16 && c.measureText(t).width > W - 260) { fs--; c.font = `${fs}px ${f2}`; } c.fillStyle = '#7f8ab3'; c.fillText(t, 228, 128); }
   c.font = `28px ${f2}`; c.fillStyle = '#a7b1d4';
   c.fillText(`${L('Peak', 'Pico', 'Auge')} OVR ${G.peakOvr} · ${L('Peak stars', 'Estrellas', 'Estrelas')} ${G.peakStars}★ · ${L('Fame', 'Fama', 'Fama')} ${G.fame}`, 228, 156);
-  c.fillText(`${L('Earnings', 'Ganancias', 'Ganhos')} ${money(grossEarn())} · ${careerTeam()}`, 228, 184);
+  { const fl = franchiseTeams(), t0 = `${L('Earnings', 'Ganancias', 'Ganhos')} ${money(grossEarn())} · `; c.fillText(t0, 228, 184);
+    const w0 = c.measureText(t0).width; if (fl.length) c.fillStyle = '#ffd23f'; c.fillText(fl.length ? fl.map(flLabel).join(' · ') : careerTeam(), 228 + w0, 184); c.fillStyle = '#a7b1d4'; }
   c.fillStyle = '#3ddc84'; c.fillText(`${G.hof && G.hof.pro ? L('HALL OF LEGENDS · CLASS OF ', 'SALÓN DE LEYENDAS · CLASE ', 'HALL DAS LENDAS · TURMA ') + (G.retiredYear + 5) : L('Career complete', 'Carrera completa', 'Carreira completa')}${G.hof && G.hof.col ? L(' · College HOF', ' · HOF Universitario', ' · HOF Universitário') : ''}${G.clutchStars ? ' · Mr. Clutch ' + '★'.repeat(G.clutchStars) : ''}`, 228, 212);
   // trophy summary
   c.fillStyle = '#ffd23f'; c.font = `11px ${f1}`; c.fillText(L('TROPHY CASE', 'VITRINA', 'ESTANTE'), 40, honTop - 12);
