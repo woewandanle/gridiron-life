@@ -1588,7 +1588,7 @@ function gameStats(m, snaps, q, ctx) {
     const soft = (x) => (x <= 70 ? x : 70 + (x - 70) * 0.4), ra = STAGE_ADJ();
     const vis = soft(a.sk1 + ra), bt = soft(a.sk2 + ra), spd = soft(a.spd + ra), brs = soft(a.brs + ra), agi = soft(a.agi + ra), pow = soft(a.pow + ra);
     // workload: playing time first, rating second (a great back gets ~300-330 carries, not 380)
-    const car = Math.max(1, R(ri(11, 21) * 0.9 * snaps * (1 + (G.stage === 'PRO' ? 0.2 : 0.4) * Math.max(-0.5, q) + e * (cE ? 0.08 : 0.04)) * (G.stage === 'PRO' ? 1 : 1.12))); // college/HS stars carry a bigger load
+    const car = Math.max(1, R(ri(11, 21) * 0.9 * snaps * (1 + (G.stage === 'PRO' ? 0.2 : 0.4) * Math.max(-0.5, q) + e * (cE ? 0.08 : 0.03)) * (G.stage === 'PRO' ? 1 : 1.12))); // college/HS stars carry a bigger load
     let ryd = 0, brk = 0, lng = 0, rtd = 0, x20 = 0;
     const teamTD = Math.max(0, R(ctx.pts / 7 + rf(-0.3, 0.3)));
     for (let i = 0; i < car; i++) {
@@ -1611,8 +1611,8 @@ function gameStats(m, snaps, q, ctx) {
     // Vision does double duty: reading the run lane and reading the coverage (the check-down / safety valve), with agility
     // to get open out of the backfield and IQ for timing. Starter ~35 catches, elite receiving backs 70-80 (McCaffrey-type).
     const rcv = vis * 0.4 + agi * 0.3 + (a.iq + ra) * 0.3;
-    // a league-elite pro back is fed as a workhorse (carries above: Henry 378, Barkley 345) and a little more in the pass game
-    const rec = Math.max(0, R(snaps * rf(1, 4) * clamp(0.7 + (rcv - 58) * 0.065, 0.45, 2) * (1 + e * (cE ? 0.07 : 0.02)))), recyd = R(rec * clamp(7 + (spd * 0.4 + brs * 0.15 + agi * 0.2 + bt * 0.25 - 60) * 0.05 + rf(-3, 4), 2, 20)); // YAC: speed, make-you-miss, break tackles
+    // a league-elite college back is also a featured receiver; a pro elite back gets his extra touches on the ground (carries above)
+    const rec = Math.max(0, R(snaps * rf(1, 4) * clamp(0.7 + (rcv - 58) * 0.065, 0.45, 2) * (1 + e * (cE ? 0.07 : 0.01)))), recyd = R(rec * clamp(7 + (spd * 0.4 + brs * 0.15 + agi * 0.2 + bt * 0.25 - 60) * 0.05 + rf(-3, 4), 2, 20)); // YAC: speed, make-you-miss, break tackles
     // receiving TDs: ~1 per 130 receiving yards, more for a back who finds space in the red zone (starter 1-3, elite 4-6)
     const rectd = rec ? Math.max(0, R(recyd / 130 * clamp(1 + (vis - 60) * 0.02, 0.7, 1.4) + rf(-0.5, 0.5))) : 0;
     return { d: { car, ryd, rtd, brk, rec, recyd, rectd, lng, x20 }, big: ryd >= 150 || rtd + rectd >= 2 || lng >= 50 || recyd >= 90,
@@ -1852,13 +1852,13 @@ const COL_FIX = { QB: 2.4, RB: -1.9, WR: -1.6, TE: -1.2, LB: -2.0, DE: -2.2, DL:
 // top-10 single seasons ever at the position begin — QB a notch higher, top-5 (~5,300 yds / 49 TD; Manning 5,477 / 55),
 // because the game's elite QBs out-throw the real league; dual threat Lamar 2019;
 // RB at the line real OPOY backs win with — 1,800 rush (Henry 2,027, Barkley 2,005, Taylor 1,811), 2,100 scrimmage
-// (Gurley 2,093, McCaffrey 2,023), 20 TD (Alexander 28, Holmes 24) — backs win it more than anyone and peak briefly; WR ~1,750 yds
+// (Gurley 2,093, McCaffrey 2,023), 22 TD (Alexander 28, Holmes 24; the game's backs score a little more than real ones) — backs win it more than anyone and peak briefly; WR ~1,750 yds
 // (Johnson 1,964), 17 TD (Moss 23), 133 catches (Thomas 149); TE ~1,250 yds (Kelce 1,416), 13 TD (Gronkowski 17);
 // K 40+ FGM (Akers 44); DE 20 sacks (Strahan 22.5); DT 14.5 (Donald 20.5); DB 10 INT (Diggs 11).
 // Linemen (PFF charting — pancakes are never officially kept): zero sacks and single-digit-ish pressures allowed.
 const HIST = {
   QB: (v) => v('pyd') >= 5300 || v('ptd') >= 49 || (v('ryd') >= 1000 && v('ptd') + v('rtd') >= 40),
-  RB: (v) => v('ryd') >= 1800 || v('ryd') + v('recyd') >= 2100 || v('rtd') + v('rectd') >= 20,
+  RB: (v) => v('ryd') >= 1800 || v('ryd') + v('recyd') >= 2100 || v('rtd') + v('rectd') >= 22,
   WR: (v) => v('recyd') >= 1750 || v('rectd') >= 17 || v('rec') >= 133,
   TE: (v) => v('recyd') >= 1250 || v('rectd') >= 13,
   OL: (v) => v('sa') === 0 && v('pra') <= 10, OT: (v) => v('sa') === 0 && v('pra') <= 12,
@@ -1897,7 +1897,8 @@ function awardsVoting(S, o) {
     // Interior linemen are the fringe case (no lineman has ever won it): from the 3rd one on it's a coin that keeps
     // shrinking — 3rd 50%, 4th 33%, 5th 25%…
     const op = hcount('opoy');
-    V.opoy = hitStat && ['QB', 'RB', 'WR', 'TE', 'OL', 'OT'].includes(pos) && (pos !== 'OL' || op < 2 || chance(100 / op));
+    // Modern voters: every OPOY since 2010 came from a 10+ win playoff team (regular-season wins).
+    V.opoy = hitStat && rw >= 10 && ['QB', 'RB', 'WR', 'TE', 'OL', 'OT'].includes(pos) && (pos !== 'OL' || op < 2 || chance(100 / op));
     // Defensive Player of the Year: the best defender in the league, team record barely matters (J.J. Watt won on losing teams).
     // Edge rushers win it most often, then interior DL / LB, then DBs.
     // A historic defensive season (HIST) wins it outright; otherwise the league's top defender (1st team, rank 1) is a vote.
