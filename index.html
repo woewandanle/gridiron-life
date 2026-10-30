@@ -1851,14 +1851,13 @@ const COL_FIX = { QB: 2.4, RB: -1.9, WR: -1.6, TE: -1.2, LB: -2.0, DE: -2.2, DL:
 // (and a defender's DPOY). The season line as shown — regular season + playoffs — box score only (ratings don't vote). Each line is about where the NFL's
 // top-10 single seasons ever at the position begin — QB a notch higher, top-5 (~5,300 yds / 49 TD; Manning 5,477 / 55),
 // because the game's elite QBs out-throw the real league; dual threat Lamar 2019;
-// RB at the line real OPOY backs win with — 1,800 rush (Henry 2,027, Barkley 2,005, Taylor 1,811), 2,100 scrimmage
-// (Gurley 2,093, McCaffrey 2,023), 22 TD (Alexander 28, Holmes 24; the game's backs score a little more than real ones) — backs win it more than anyone and peak briefly; WR ~1,750 yds
+// RB ~1,950 rush (Dickerson 2,105), ~2,280 scrimmage (Johnson 2,509), ~25 TD (Tomlinson 31); WR ~1,750 yds
 // (Johnson 1,964), 17 TD (Moss 23), 133 catches (Thomas 149); TE ~1,250 yds (Kelce 1,416), 13 TD (Gronkowski 17);
 // K 40+ FGM (Akers 44); DE 20 sacks (Strahan 22.5); DT 14.5 (Donald 20.5); DB 10 INT (Diggs 11).
 // Linemen (PFF charting — pancakes are never officially kept): zero sacks and single-digit-ish pressures allowed.
 const HIST = {
   QB: (v) => v('pyd') >= 5300 || v('ptd') >= 49 || (v('ryd') >= 1000 && v('ptd') + v('rtd') >= 40),
-  RB: (v) => v('ryd') >= 1800 || v('ryd') + v('recyd') >= 2100 || v('rtd') + v('rectd') >= 22,
+  RB: (v) => v('ryd') >= 1950 || v('ryd') + v('recyd') >= 2280 || v('rtd') + v('rectd') >= 25,
   WR: (v) => v('recyd') >= 1750 || v('rectd') >= 17 || v('rec') >= 133,
   TE: (v) => v('recyd') >= 1250 || v('rectd') >= 13,
   OL: (v) => v('sa') === 0 && v('pra') <= 10, OT: (v) => v('sa') === 0 && v('pra') <= 12,
@@ -1866,7 +1865,8 @@ const HIST = {
   DE: (v) => v('sck') >= 20, DT: (v) => v('sck') >= 14.5, DL: (v) => v('sck') >= 17,
   LB: (v) => v('tkl') >= 180 || v('sck') >= 14, CB: (v) => v('int') >= 10, S: (v) => v('int') >= 10
 };
-const historic = (st, pos) => !!(st && HIST[pos] && HIST[pos]((k) => st[k] || 0));
+// Judged at a 17-game pace: a season with playoff games is scaled down to 17 (k = 17 / games played; never scaled up).
+const historic = (st, pos, k = 1) => !!(st && HIST[pos] && HIST[pos]((key) => (st[key] || 0) * k));
 // MVP_CORE = that position's top ~15% (a clear star) — the bar for the 15-win route.
 const MVP_CORE = { QB: 5, RB: 5.5, WR: 5, TE: 5, CB: 4.5, S: 6.5, LB: 4.5, DE: 4.5, DT: 2.5, DL: 5, OL: 3.5, OT: 4.5, K: 4 };
 const DPOY_W = { DE: 55, DT: 40, DL: 40, LB: 40, CB: 30, S: 30 };
@@ -1890,7 +1890,7 @@ function awardsVoting(S, o) {
     const rw = S.games.slice(0, S.reg).filter((g) => g.win).length;
     const mi = o + clamp((statIndex(S.st, S.games.length) - 0.85) * 12, -8, 9) - S.out.length * 0.4 - (POS_BASE[pos] - 64) - PRO_MEAN;
     V.mi = Math.round(mi * 10) / 10; V.rw = rw; // kept in the season history for calibration
-    const hitStat = historic(S.st, pos), hitRec = rw >= 15 && mi >= MVP_CORE[pos]; V.hs = hitStat;
+    const gpl = S.games.filter((g) => g.us != null && !g.out).length, hitStat = historic(S.st, pos, 17 / Math.max(17, gpl)), hitRec = rw >= 15 && mi >= MVP_CORE[pos]; V.hs = hitStat;
     V.mvp = (hitStat && hitRec) || (pos === 'QB' && (hitStat || hitRec));
     // Offensive Player of the Year: a historic season on offense (HIST; linemen too — a no-sacks, pancake-machine year counts).
     // Can come with the MVP (Brady 2007, Tomlinson 2006, Mahomes 2018). Kickers are special teams.
